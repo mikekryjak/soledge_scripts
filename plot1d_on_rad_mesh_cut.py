@@ -1,0 +1,857 @@
+#!/usr/bin/env python
+
+# ----- Script section -----
+
+if __name__ == "__main__":
+	import sys
+	from plot1d_on_rad_mesh_cut 			import plot1d_on_rad_mesh_cut
+	from routines.cli_routines				import *
+
+	if(cli_present("-h",sys.argv) and cli_present("-exp_file",sys.argv) ):
+		from routines.exp_data_routines			import get_exp_data_point_help
+		from files.load_exp_descr						import load_exp_descr_help
+		load_exp_descr_help()
+		get_exp_data_point_help()
+		exit()
+
+	if(cli_present("-h",sys.argv)):
+		print("\nThis script plot plasma parameters on soledge mesh along a line starting from plasma core\n")
+		print("plot1d_on_rad_mesh_cut options")
+		print("\t-path           Directory with simulation or list of directories[d='./']")
+		print("\t-evolution      If > 0 plot evolution file (or evolutions files with list [3,4,5])  [d=0]")
+		print("\t-rz0_line       Core coordinate direction line (Es.: [3.,0.]) [D=[]")
+		print("\t-theta_line     Angular (deg) direction line [D=[0.]")
+		print("\t-mod_file       Text (csv, or tsv) file with model data to compare [d='']")
+		print("\t-exp_file       Name or list exp file with description of diagnostic data [d=['']]")
+		print("\t-shot           Shot to compare [d=0]")
+		print("\t-tstart         Start time experimental data to compare [d=0.]")
+		print("\t-tend           End time experimental data to compare [d=0.]")
+		print("\t-rho_scale      Use rho_pol scale for x axis [d=false]")
+		print("\t-psi_scale      Use psi_pol norm. scale for x axis [d=false]")
+		print("\t-log_scale      Use log scale for y axis [d=false]")
+		print("\t-d_only         plot only e- and D+ [d=false]")
+		print("\t-all_ions       plot details for allo ions [d=false]")
+		print("\t-path_label     Labels to itentify runs in plot [d='']")
+		print("\t-no_labels      Skip labels in plots [d=false]")
+		print("\t-print_lambda   Compute and print lambda on plots [d=false]")
+		print("\t-diff           Plot difference between two evolutions[d=false]")
+		print("\t-extra_walls    Flag to show extra walls [d=false]")
+		print("\t-one_plot       One plot on each figure [d=false]")
+		print("\t-save           Save figures on files, values=none/png/ps/eps/pdf/stat [D='none']")
+		print()
+		exit()
+
+	path	 		= cli_get_value("-path",			sys.argv,   [""])
+	evolution		= cli_get_value("-evolution",		sys.argv,	[])
+	rz0_line		= cli_get_value("-rz0_line",		sys.argv,	[])
+	theta_line		= cli_get_value("-theta_line",		sys.argv,	0.)
+	mod_file			= cli_get_value("-mod_file",			sys.argv,"")
+	exp_files		= cli_get_value("-exp_file",			sys.argv,[""])
+	shot			= cli_get_value("-shot",			sys.argv,	0)
+	tstart			= cli_get_value("-tstart",			sys.argv,	0.)
+	tend			= cli_get_value("-tend",			sys.argv,	0.)
+	path_label 		= cli_get_value("-path_label",		sys.argv,   [""])
+	no_labels		= cli_present("-no_labels",			sys.argv)
+	d_only			= cli_present("-d_only",			sys.argv)
+	all_ions		= cli_present("-all_ions",			sys.argv)
+	save			= cli_get_value("-save",			sys.argv, "none")
+	rho_scale		= cli_present("-rho_scale",			sys.argv)
+	psi_scale		= cli_present("-psi_scale",			sys.argv)
+	log_scale		= cli_present("-log_scale",			sys.argv)
+	print_lambda	= cli_present("-print_lambda",		sys.argv)
+	diff				= cli_present("-diff",				sys.argv)
+	extra_walls		= cli_present("-extra_walls",		sys.argv)
+	one_plot		= cli_present("-one_plot",			sys.argv)
+	plot1d_on_rad_mesh_cut(path=path, evolution=evolution, rz0_line=rz0_line, theta_line=theta_line, mod_file=mod_file, exp_files=exp_files, shot=shot, tstart=tstart, tend=tend, path_label=path_label, no_labels=no_labels, d_only=d_only, all_ions=all_ions, log_scale=log_scale, rho_scale=rho_scale, psi_scale=psi_scale, print_lambda=print_lambda, diff=diff, extra_walls=extra_walls, one_plot=one_plot, save=save)
+	exit()
+
+#=======================================
+
+# Function definition is here
+
+import types
+import os
+import h5py
+from math													import sqrt, exp
+import numpy											as np
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot							as pyp
+from matplotlib.backends.backend_pdf	import PdfPages
+
+from routines.h5_routines							import h5_read
+from routines.intersect_contour				import intersect_2contours
+from routines.utils_walls							import get_in_out_walls, plot2d_walls, get_dmax_points_walls
+from routines.set_profile_from_filedata	import set_profile_from_filedata
+from routines.exp_data_routines				import get_exp_data_point
+from routines.globals									import DEBUG, KB, BALLOONING_NAMES
+
+from mesh.get_rz_core_sep						import get_rz_core_sep
+from mesh.get_rho_in_out_core_sep		import get_rho_in_out_core_sep
+from mesh.find_zones_intersections			import find_zones_intersections
+from mesh.compute_mesh_intersections	import compute_mesh_intersections
+
+from files.load_soledge_mesh_file				import load_soledge_mesh_file
+from files.load_plasma_files						import load_plasma_files
+from files.load_fluxes_files							import load_fluxes_files
+from files.load_ions_list								import load_ions_list
+from files.load_text_data							import load_text_data
+from files.load_refpar_file							import load_refpar_file
+from files.load_input_file							import load_input_file
+from files.load_exp_descr							import load_exp_descr
+from files.load_exp_data							import load_exp_data
+from files.load_transports_coefficients		import load_transports_coefficients
+from files.save_stat									import save_stat
+
+
+#==============================================================================
+# This routine plots ne/ni and Te/Ti ionization and gas pressure on eirene mesh
+#==============================================================================
+
+def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., mod_file="", exp_files="", shot=0, tstart=0., tend=0., log_scale=0, rho_scale=0, psi_scale=0, path_label=[], no_labels=0, d_only=0, all_ions=0, print_lambda=0, diff=0, extra_walls=0, one_plot=0, save="none"):
+
+
+	print("plot1d_on_rad_mesh_cut")
+
+	if(diff != 0):
+		if((evolution == 0) or (len(evolution) != 2)):
+			print("\tWith -diff option two evolutions must be provided")
+			exit()
+		log_scale	 = 0
+		mod_file	 = ""
+		exp_file	 = ""
+		print_lambda = 0
+
+#	prepare for experimental data
+
+	exp_data_ok = False
+
+	if((len(exp_files) > 0) and (len(exp_files[0]) > 0)):
+		exp_descr = []
+		Diags	  = []
+		for exp_file in exp_files:
+			if(len(exp_file) > 0):
+				exp_descr.append(load_exp_descr(exp_file))					#load diags description
+				if((tstart > 0) and (tstart <= tend)):
+					exp_descr[-1].tstart = tstart
+					exp_descr[-1].tend   = tend
+				if(shot != 0): exp_descr[-1].shot = shot
+		exp_data_ok = True
+		Exp_Data = []
+
+#	prepare paths
+
+	if(len(evolution) == 0): evolution = [0]
+	if(len(path) == 0):		 path = [""]
+	elif(len(path) > 1):	 evolution = [evolution[0]]
+
+	if(((len(path) > 1) or (len(evolution) > 1)) and (save == "stat")):
+		print("\tSave stat is possible with one evolution or one path only")
+		exit()
+
+	if((len(path_label) < len(path)) or (len(path_label[0]) == 0)):
+		path_label = []
+		for in_path  in path: path_label.append(os.path.basename(os.path.abspath(in_path)))
+		HasPathLabel=False
+	else:
+		HasPathLabel=True
+
+	nRuns = max(len(path),len(evolution))
+
+#	Read reference parameters
+	
+	path0  = path[0]
+	if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
+
+	RefPar = load_refpar_file(path0+"Results/")
+
+	ions = load_ions_list(path0)
+	if(d_only != 0): ions = ions[0:2]
+	iPlasmas = [i for i in range(len(ions))]
+	
+	iIons1 = [0]												#Get ions name and position of first charged state
+	IonNames  = ["e"]
+	if(len(ions) > 2):
+		iCharge = 1
+		if(ord(ions[1][iCharge]) > 64): iCharge +=1
+		iIons1.append(1)
+		IonNames.append(ions[1][:iCharge])
+		for i in range(2,len(ions)):
+			iCharge = 1
+			if(ord(ions[i][iCharge]) > 64): iCharge +=1
+			if(IonNames[-1] != ions[i][:iCharge]):
+				iIons1.append(i)
+				IonNames.append(ions[i][:iCharge])
+
+#	Read mesh
+
+	Config = load_soledge_mesh_file(path0+"mesh.h5")
+
+#	Find mesh along line
+
+	if(len(rz0_line) == 0):
+		Rcore, Zcore, CoreMegazone = get_rz_core_sep(Config, core_and_sep = False)
+		rz0_line = [0.5*(Rcore.min() + Rcore.max()), Zcore[np.argmax(Rcore)]]
+
+	rMax		= 6*get_dmax_points_walls(Config, rz0_line[0], rz0_line[1], plasma_wall=True, eirene_wall=False, extra_wall=False)
+	theta_line	= theta_line*np.pi/180.
+	RZLine		= np.array([[rz0_line[0],						  rz0_line[1]], \
+							[rz0_line[0]+rMax*np.cos(theta_line), rz0_line[1]+rMax*np.sin(theta_line)]])
+
+
+	Cut = find_zones_intersections(Config, RZLine)
+	Lengths, IntRZ, IntCEll = compute_mesh_intersections(Config, Cut, also_pos=True, use_mag_zones=False)
+	in_wall, out_wall = get_in_out_walls(Config, IntRZ[:,0], IntRZ[:,1])
+	Lengths = Lengths[in_wall,:]
+	IntRZ	= IntRZ[in_wall,:]
+	IntCEll	= IntCEll[in_wall,:]
+
+	dist = Lengths[:,0] - Lengths[0,0]
+#	print("Lengths=",Lengths)
+
+	if(rho_scale != 0): xName = "Rho_pol"
+	else:  				xName = "Psi_pol"
+	Rho, In_Sep, Out_Sep, RZcore, RZsep = get_rho_in_out_core_sep(Config, IntRZ[:,0], IntRZ[:,1], rho_type = xName)
+	
+	if(len(In_Sep) > 0):
+		if(Out_Sep[-1] < In_Sep[0]):
+			Out_Sep = np.append(Out_Sep, In_Sep[0])
+		else:
+			Out_Sep = np.append(In_Sep[-1], Out_Sep)
+
+	if((rho_scale != 0) or (psi_scale != 0)):
+		dist = Rho
+		dsep = 0.
+		xSep = 1.
+	else:
+		xName = "DIST"
+		Ri, Zi, is1, is2  = intersect_2contours(RZsep[:,0], RZsep[:,1], IntRZ[:,0], IntRZ[:,1])
+		if(len(Ri)==0):
+			pyp.plot(RZsep[:,0], RZsep[:,1],'k-')
+			pyp.plot(IntRZ[:,0], IntRZ[:,1],'r-')
+			pyp.show()
+
+		dsep = sqrt((IntRZ[0,0] - Ri[0])**2 + (IntRZ[0,1] - Zi[0])**2)
+		dist -= dsep
+		xSep = 0.
+
+#	Read and plot parameters
+
+	if(rho_scale != 0):
+		xLabels    = [["$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$"], \
+					  ["$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$", "$\\rho_{pol}$"]]
+	elif(psi_scale != 0):
+		xLabels    = [["$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$"], \
+					  ["$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$", "$\\tilde{\\psi}_{pol}$"]]
+	else:
+		xLabels    = [["$l\ (m)$", "$l\ (m)$", "$l\ (m)$", "$l\ (m)$"], \
+					  ["$l\ (m)$", "$l\ (m)$", "$l\ (m)$", "$l\ (m)$", "$l\ (m)$", "$l\ (m)$"]]
+
+	yLabels     = [[ "$n\ (*10^{19}\ m^{-3})$", "$T\ (keV)$", "$n*T^{3/2}$", "$Pp\ (kP)$" ], \
+				   [ "$n\ (*10^{19}\ m^{-3})$", "$T\ (keV)$", "$n*T^{3/2}$", "$Mach\ number$", "$Gamma$", "$Rad\ (kW)$"]]
+	LogScales	= [["log", "log", "log", "log"], ["log", "log", "log", "linear", "log", "log"]]
+
+
+	Pars   = [["Dense", "Tempe","(Dens*Temp^1.5)e","Ppi"],["Densi", "Tempi","(Dens*Temp^1.5)i","Mi","velocityi","IRadi"]]
+	Facts		= [[1e-19,1e-3,1e-19*sqrt(1e-9),1.e-3],[1e-19,1.e-3,1e-19*sqrt(1e-9),1.,1,1e-3]]
+	BottomZero	= [[True,True,True,True],[True,True,False,False,False,True]]
+	PrintDecay	= [[True,True,True,False],[True,True,True,False,False,False]]
+	VPosPlot	= [[2,3,6,5],[1,2,4,3,5,6]]											#Position of plasma plot
+	IonTitle	= ions[:2]
+	if(len(path) == 1):
+		EPosPlot    = [1,4]																	#Position of extra plots
+	else:
+		EPosPlot    = [1,4,5]																#Position of extra plots
+		BallonLabel = ["$D\ &\ Nu$","$Chi_e & Chi_i$"]
+		del xLabels[0][2]
+		del yLabels[0][2]
+		del Pars[0][3]
+		del Facts[0][3]
+		del PrintDecay[0][3]
+		del BottomZero[0][3]
+		del VPosPlot[0][3]
+
+
+#	repeat for all ions like the first one
+
+	for iIon in range(2,len(iIons1)):
+		iPlasma = iIons1[iIon]
+		print("iIon=",iIon)
+		xLabels.append(xLabels[1][:6]) 
+		yLabels.append(["$n_{tot}\ (*10^{19}\ m^{-3})$","$n_{e,tot}\ (*10^{19}\ m^{-3})$","$C_{imp}$","$Rad\ (kW)$","$<Z>$"])
+		Pars.append(["TDens","TDense","Cimp","TotRad","Zave"])
+		for i in range(len(Pars[-1])):  Pars[iPlasma][i] += ions[iPlasma][:-1]
+		LogScales.append(["log", "log", "log", "log", "linear"]) 
+		Facts.append([1e-19,1e-19,1.,1.e-3,1.]) 
+		BottomZero.append([True,True,True,True,True]) 
+		PrintDecay.append([False,False,False,False,False]) 
+		VPosPlot.append([1,2,3,4,5]) 
+		IonTitle.append(IonNames[iIon])
+		if(iIon == 2):
+			xLabels[-1].append(xLabels[0][0])
+			yLabels[-1].append("$Z_{eff}$")
+			Pars[-1].append("Zeff")
+			LogScales[-1].append("linear")
+			Facts[-1].append(1.)
+			BottomZero[-1].append(True)
+			PrintDecay[-1].append(False)
+			VPosPlot[-1].append(6)
+
+	if(all_ions != 0):
+		for iPlasma in range(2,len(ions)):
+			xLabels.append(xLabels[1]) 
+			yLabels.append(yLabels[1]) 
+			LogScales.append(LogScales[1]) 
+			Pars.append(["Dens", "Temp","(Dens*Temp^1.5)","M","velocity","IRad"]) 
+			for i in range(len(Pars[-1])):  Pars[-1][i] += ions[iPlasma][:-1]
+			Facts.append(Facts[1]) 
+			BottomZero.append(BottomZero[1]) 
+			PrintDecay.append(PrintDecay[1]) 
+			VPosPlot.append(VPosPlot[1]) 
+			IonTitle.append(ions[iPlasma][:-1])
+
+
+	if(save == "stat"):
+		iSaveStat	   = [[1,1,0,0],[1,1,0,0,0,0]]															#0=no stat, 1=max, 2=max & integral
+		StatHeader     = "             path,             time,           ne_sep,           Te_sep,           ni_sep,            Ti_sep"
+		StatFormats		= ['"{:>15}",','{:17.4e},','{:17.4e},','{:17.4e},','{:17.4e},','{:17.4e},']
+		StatValues		= ["", 0., 0., 0., 0., 0.]
+
+	colors = ['b','g','r','c','m','y','b','g','r','c','m','y']
+
+#	Load Ballooning data
+
+	iTransp = np.zeros(len(BALLOONING_NAMES), dtype='i4')
+	Transp = np.empty((len(path),len(BALLOONING_NAMES), len(dist)), dtype='f8')
+	TranspCoeffMesh = TranspCoeffRes = None
+
+	input = []
+	for iPh in range(len(path)):
+		path0  = path[iPh]
+		if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
+		input.append(load_input_file(path0))
+
+		for k in range(len(BALLOONING_NAMES)):
+			if(k < len(BALLOONING_NAMES)-1):
+				if((input[-1].ballooning_parameters.ballooning_model == 0) or (input[-1].ballooning_parameters.ballooning_model == 2)):
+					if(input[-1].ballooning_parameters.ballooning_model == 0):
+						Transp[iPh,k,:] = 1.
+					else:
+						if(k == 0): TranspCoeffMesh = load_soledge_mesh_file(path0+"mesh.h5")
+						Transp[iPh,k,:] = get_transp_parameter_on_mesh(TranspCoeffMesh, IntCEll, k)
+
+					if(BALLOONING_NAMES[k] == "Chie"):
+						Transp[iPh,k,:] *= input[-1].transport_parameters.chie_p
+					elif(BALLOONING_NAMES[k] == "D"):
+						Transp[iPh,k,:] *= input[-1].transport_parameters.Dn_p[0]
+					elif(BALLOONING_NAMES[k] == "Nu"):
+						Transp[iPh,k,:] *= input[-1].transport_parameters.nu_p[0]
+					elif(BALLOONING_NAMES[k] == "Chi"):
+						Transp[iPh,k,:] *= input[-1].transport_parameters.chii_p[0]
+
+				elif((input[-1].ballooning_parameters.ballooning_model == 1) or (input[-1].ballooning_parameters.ballooning_model == 3)):
+					TranspCoeffRes = load_transports_coefficients(path0+"Results/", nZones=len(Config.Zones))
+					Transp[iPh,k,:] = get_transp_parameter_on_mesh(TranspCoeffRes, IntCEll, k)
+			else:
+				if(BALLOONING_NAMES[k] == "Vpinch"):
+					if((input[-1].transport_parameters.pinch_model[0] == 3) and (Config.transp_values_OK)):
+						if(TranspCoeffMesh == None): TranspCoeffMesh = load_soledge_mesh_file(path0+"mesh.h5")
+						Transp[iPh,k,:] = get_transp_parameter_on_mesh(TranspCoeffMesh, IntCEll, k)*input[-1].transport_parameters.v_pinch[0]
+					elif(input[-1].transport_parameters.pinch_model[0] == 2):
+						if(TranspCoeffRes == None): TranspCoeffRes = load_transports_coefficients(path0+"Results/", nZones=len(Config.Zones))
+						Transp[iPh,k,:] = get_transp_parameter_on_mesh(TranspCoeff, IntCEll, k)
+					elif(input[-1].transport_parameters.pinch_model[0] == 1):
+						Transp[iPh,k,:] = input[-1].transport_parameters.v_pinch[0]
+					elif(input[-1].transport_parameters.pinch_model[0] == 0):
+						Transp[iPh,k,:] = 0.
+					else:
+						print("\tUNKNOWN PINCH MODEL = ",input[-1].transport_parameters.pinch_model[0] )
+						exit()
+
+		TranspCoeffMesh = TranspCoeffRes =None
+
+	for k in range(len(BALLOONING_NAMES)):
+		if(BALLOONING_NAMES[k] == "Chie"):			iTransp[2]	   = k
+		elif(BALLOONING_NAMES[k] == "D"):				iTransp[0]	   = k
+		elif(BALLOONING_NAMES[k] == "Nu"):				iTransp[1]	   = k
+		elif(BALLOONING_NAMES[k] == "Chi"):			iTransp[3]	   = k
+		elif(BALLOONING_NAMES[k] == "Vpinch"):	iTransp[4]	   = k
+
+#	Load Plasma parameters and text data
+
+	mod_data_ok = False
+	if(len(mod_file) > 0):
+		Headers, TextData = load_text_data(mod_file)
+		File_xNames  = []
+		File_yNames  = []
+		File_xValues = []
+		File_yValues = []
+
+	if(exp_data_ok):
+		File_xNames  = []
+		File_yNames  = []
+
+	Values		= []
+	VNames		= []
+	for iPh in range(len(path)):
+		for iEv in range(len(evolution)):
+			Values.append([])
+			VNames.append([])
+
+			path0  = path[iPh]
+			if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
+			Plasmas = load_plasma_files(path0, nZones=len(Config.Zones), Evolution=evolution[iEv], iPlasmas=iPlasmas)
+
+			for iFig in range(len(Pars)):
+
+				Values[-1].append([])
+				VNames[-1].append([])
+				if(exp_data_ok): Exp_Data.append([])
+				for i in range(len(Pars[iFig])):
+					iPar = -1
+					iP   = -1
+					while ((iPar == -1) and (iP < len(Plasmas))):
+						iP += 1
+						try:
+							iPar = Plasmas[iP][0].VNames.index(Pars[iFig][i])
+							break
+						except:
+							pass
+
+					if(iPar != -1):
+						Values[-1][iFig].append(get_plasma_parameter_on_mesh(Plasmas[iP], iPar, IntCEll))
+					else:
+						print("\tNot found parameter: ", Pars[iFig][i])
+#						for iP in range(len(Plasmas)): print("\t\tiP,VNames: ", iP, Plasmas[iP][0].VNames)
+						Values[-1][iFig].append(np.zeros_like(Values[0][0][0]))
+						LogScales[iFig][i] = "linear"
+					VNames[-1][iFig].append(Pars[iFig][i])
+
+#				Read data from text file				
+
+				if((iPh == 0) and (iEv == 0)):
+					if(len(mod_file) > 0):
+						File_xNames.append([])
+						File_yNames.append([])
+						File_xValues.append([])
+						File_yValues.append([])
+						File_xName = xName[:]
+						for i in range(len(Pars[iFig])):
+							Empty = np.empty(0, dtype='i4')
+							File_yName = Pars[iFig][i]
+							xValue, yValue = set_profile_from_filedata(Headers, TextData, File_xName, File_yName, Empty, Lengths, OutxOffset = -dsep)
+							if(len(yValue) > 0):
+								File_xNames[-1].append(File_xName[:] + "_" + Pars[iPlasma][i])
+								File_yNames[-1].append(Pars[iPlasma][i])
+								File_xValues[-1].append(xValue)
+								File_yValues[-1].append(yValue)
+								mod_data_ok = True
+							else:
+								File_xNames[-1].append([])
+								File_yNames[-1].append([])
+								File_xValues[-1].append([])
+								File_yValues[-1].append([])
+
+#					Read exp_file. data
+
+					if(exp_data_ok):
+						File_xNames.append([])
+						File_yNames.append([])
+						Par_xName = xName[:]
+						for i in range(len(Pars[iFig])):
+							Exp_Data[-1].append([])
+							Par_yName = Pars[iFig][i]
+							for iExp in range(len(exp_descr)):
+								diag_data = get_exp_data_point(Par_xName, Par_yName, exp_descr[iExp], Lengths, OutxOffset = -dsep, DiagType = "POINT")
+								Exp_Data[-1][-1].append(diag_data)
+
+
+	if((len(path) < 2) and (len(evolution) < 2)): Tempus = Plasmas[0][0].tempus
+	else:										  Tempus = RefPar.time
+
+	if(diff != 0):
+		for iPlasma in range(len(Values[0])):
+			for i in range(len(Values[0][iPlasma])): Values[0][iPlasma][i] = Values[1][iPlasma][i] - Values[0][iPlasma][i]
+
+#	Prepare for plotting and saving data
+
+	i_plot_file = 0
+
+	if(save == "pdf"):	pdf = PdfPages("plot1d_on_rad_mesh_cut_t={:.3f}.".format(Tempus)+save)   #pdf in one file only
+	if(save == "csv"):
+		if((len(evolution) > 1) or (len(path) > 1)):
+			save = "none"
+			print("plot1d_on_rad_mesh_cut: cannot save to csv more than one profile!!!")
+		else:
+			csv = []
+			csv.append(types.SimpleNamespace())
+			csv[-1].Name   = xName
+			csv[-1].Values = dist
+
+
+	nRows		= 2
+	nCols		= 3
+	nFigs		= len(Pars)
+	nPLots		= len(EPosPlot)
+	for i in range(len(Pars)): nPLots += len(Pars[i])
+
+	Fig = []
+	Ax  = []
+	if(one_plot != 1):
+		for i in range(nFigs):
+			Fig.append(pyp.figure())
+			if(i == 0):
+				for k in range(len(EPosPlot)):
+					Ax.append(Fig[-1].add_subplot(nRows,nCols,int(EPosPlot[k])))
+					Ax[-1].locator_params(axis='x',nbins=4)
+			for k in range(len(Pars[i])):
+				Ax.append(Fig[-1].add_subplot(nRows,nCols,int(VPosPlot[i][k])))
+				Ax[-1].locator_params(axis='x',nbins=4)
+
+			Fig[-1].tight_layout(pad=2., w_pad=3., h_pad=3.)
+	else:
+		for i in range(nPLots):
+			Fig.append(pyp.figure())
+			Ax.append(Fig[i].add_subplot(111))
+
+	for figure in Fig:  figure.patch.set_facecolor('white')
+
+	ip = len(EPosPlot) - 1
+	for iFig in range(nFigs):
+		for i in range(len(VPosPlot[iFig])):
+			ip += 1
+			if((i > 0) or (((len(evolution) != 1) or (evolution[0] == 0)) and (diff == 0))):
+				Ax[ip].set_title(IonTitle[iFig])
+			elif(diff == 0):
+				Ax[ip].set_title(IonTitle[iFig]+" evol. {:d}".format(evolution[0]))
+			else:
+				Ax[ip].set_title(IonTitle[iFig]+" diff {:d}-{:d}".format(evolution[1],evolution[0]))
+
+			Ax[ip].autoscale(enable=True, axis='both', tight=True)
+			Ax[ip].set_xlabel(xLabels[iFig][i])
+			Ax[ip].set_ylabel(yLabels[iFig][i])
+			if(log_scale == 0): Ax[ip].set_yscale('linear')
+			else:						Ax[ip].set_yscale(LogScales[iPlasma][i])
+
+
+#	Draw extra plots
+
+	ip = -1
+	for i in range(len(EPosPlot)):
+		ip += 1
+		Ax[ip].autoscale(enable=True, axis='both', tight=True)
+		if(i == 0):															#plot section and cut
+			if(len(path) == 1): Ax[ip].set_title(path_label[0]+" @ t={:.3f} s".format(Tempus))
+			Ax[ip].set_aspect(1.)
+			Ax[ip].set_xlabel("$R\ (m)$")
+			Ax[ip].set_ylabel("$Z\ (m)$")
+
+			plot2d_walls(Ax[ip], Config.Walls, extra_wall=extra_walls)
+
+			Ax[ip].plot(RZcore[:,0],  RZcore[:,1],  'b-')
+			Ax[ip].plot(RZsep[:,0],   RZsep[:,1],  'g-')
+
+			Ax[ip].plot(IntRZ[Out_Sep,0], IntRZ[Out_Sep,1], 'g.-')
+			Ax[ip].plot(IntRZ[In_Sep,0],  IntRZ[In_Sep,1],  'b.-')
+
+		elif((i == 1) or (i == 2)) :														#plot balloning
+			Ax[ip].set_xlabel(xLabels[0][0])
+			if(len(path) == 1):
+				kToPlot = iTransp
+			elif(i == 1):
+				kToPlot = iTransp[:2]
+			else:
+				kToPlot = iTransp[2:]
+			for iTo in range(len(kToPlot)):
+				k = kToPlot[iTo]
+				for l in range(Transp.shape[0]):
+					if(len(path) == 1):
+						Ax[ip].plot(dist[In_Sep],  Transp[0,k,In_Sep],  '.-', color = colors[k], label=BALLOONING_NAMES[k])
+						Ax[ip].plot(dist[Out_Sep], Transp[0,k,Out_Sep], '.-', color = colors[k])
+					else:
+						if(iTo == 0): 
+							Ax[ip].plot(dist[In_Sep],  Transp[l,k,In_Sep],  '.-', color = colors[l], label=path_label[l])
+							if(i == 1): Ax[ip].set_ylabel(BallonLabel[0])
+							else:		 Ax[ip].set_ylabel(BallonLabel[1])
+						else:		   Ax[ip].plot(dist[In_Sep],  Transp[l,k,In_Sep],  '.-', color = colors[l])
+						Ax[ip].plot(dist[Out_Sep], Transp[l,k,Out_Sep], '.-', color = colors[l])
+
+				Ax[ip].axvline(x=xSep, color='k', linestyle='dashed')
+
+				if(save == "csv"):
+					csv.append(types.SimpleNamespace())
+					csv[-1].Name   = BALLOONING_NAMES[k]
+					csv[-1].Values = np.copy(Transp[0,k,:])
+
+			Ax[ip].set_ylim(bottom=0.)
+			Ax[ip].legend(fontsize='small', loc='upper left')
+		else:
+			print("ERROR: extraplot non defined")
+
+
+#	Plot parameters
+
+	if(save == "stat"): 
+		StatValues[0] = path_label[0]
+		StatValues[1] = Tempus
+		iSepStat	  = Out_Sep[np.argmin(dist[Out_Sep])]
+		kSaveStat     = 2
+
+	ip = len(EPosPlot) -1
+	for iFig in range(nFigs):
+		ip0 = ip
+		for i in range(len(VPosPlot[iFig])):
+			ip += 1
+			if((len(evolution) < 2) or (diff != 0)):
+				if((len(path) < 2) or (diff != 0)):
+
+
+					Ax[ip].plot(dist[In_Sep],  Values[0][iFig][i][In_Sep]*Facts[iFig][i],  'b.-')
+					Ax[ip].plot(dist[Out_Sep], Values[0][iFig][i][Out_Sep]*Facts[iFig][i], 'g.-')
+					if((print_lambda !=0) and (PrintDecay[iFig][i]) and (rho_scale == 0) and (psi_scale == 0)):
+						iMax  = np.argmax(Values[0][iFig][i][Out_Sep])
+						V1se  = Values[0][iFig][i][Out_Sep[iMax]]/exp(1.)
+						iilow = np.where(Values[0][iFig][i][Out_Sep[iMax:]] < V1se)[0]
+						if(len(iilow) > 0):
+							i1se  = np.min(iilow)+iMax
+							d1se  = dist[Out_Sep[i1se-1]] + (dist[Out_Sep[i1se]] - dist[Out_Sep[i1se-1]])*(Values[0][iFig][i][Out_Sep[i1se-1]] - V1se)/(Values[0][iFig][i][Out_Sep[i1se-1]] - Values[0][iFig][i][Out_Sep[i1se]])
+							dd1se = d1se - dist[Out_Sep[iMax]]
+							Ax[ip].text(d1se,Values[0][iFig][i][Out_Sep[iMax]]*Facts[iFig][i],"$\lambda="+"{:.1f}$".format(dd1se*1000), size="large")
+						else:
+							print("\t\tUnable to compute Lambda for: ",yLabels[iFig][i][1:-1])
+
+					if((save == "stat") and (iFig < 2) and (iSaveStat[iFig][i] > 0)):
+						StatValues[kSaveStat] = Values[0][iFig][i][iSepStat]
+						kSaveStat += 1
+
+					if(save == "csv"):
+						csv.append(types.SimpleNamespace())
+						csv[-1].Name   = VNames[0][iFig][i]
+						csv[-1].Values = np.copy(Values[0][iFig][i])
+				else:
+					for iPh in range(len(path)):
+						if(no_labels == 0):	Ax[ip].plot(dist[In_Sep],  Values[iPh][iFig][i][In_Sep]*Facts[iFig][i],  '-', color = colors[iPh], label=path_label[iPh])
+						else:				Ax[ip].plot(dist[In_Sep],  Values[iPh][iFig][i][In_Sep]*Facts[iFig][i],  '-', color = colors[iPh])
+						Ax[ip].plot(dist[Out_Sep], Values[iPh][iFig][i][Out_Sep]*Facts[iFig][i], '-', color = colors[iPh])
+			else:
+				for iEv in range(len(evolution)):
+					Ax[ip].plot(dist[In_Sep],   Values[iEv][iFig][i][In_Sep]*Facts[iFig][i], '-', color = colors[iEv], label="{:d}".format(evolution[iEv]))
+					Ax[ip].plot(dist[Out_Sep], Values[iEv][iFig][i][Out_Sep]*Facts[iFig][i], '-', color = colors[iEv])
+
+			if(mod_data_ok and (len(File_xValues[iFig][i]) > 0)):
+				Ax[ip].plot(File_xValues[iFig][i], File_yValues[iFig][i]*Facts[iFig][i], "ro")
+				if(save == "csv"):
+					csv.append(types.SimpleNamespace())
+					csv[-1].Name   = File_xNames[iFig][i]
+					csv[-1].Values = np.copy(File_xValues[iFig][i])
+					csv.append(types.SimpleNamespace())
+					csv[-1].Name   = File_yNames[iFig][i]
+					csv[-1].Values = np.copy( File_yValues[iFig][i])
+
+			if(exp_data_ok and (len(Exp_Data[iFig][i]) > 0)):
+				for iExp in range(len(Exp_Data[iFig][i])):
+					for id in range(len(Exp_Data[iFig][i][iExp])):
+						Exp_Data_Diag = Exp_Data[iFig][i][iExp][id]
+						if(Exp_Data_Diag.errors):
+							Ax[ip].errorbar(Exp_Data_Diag.xValues, Exp_Data_Diag.yValues*Facts[iFig][i], yerr=Exp_Data_Diag.yErrors*Facts[iFig][i], fmt = Exp_Data_Diag.marker, color=Exp_Data_Diag.color, label=Exp_Data_Diag.label+" "+exp_descr[iExp].label)
+						else:
+							Ax[ip].plot(Exp_Data_Diag.xValues, Exp_Data_Diag.yValues*Facts[iFig][i], marker = Exp_Data_Diag.marker, color=Exp_Data_Diag.color, linestyle='none', label=Exp_Data_Diag.label+" "+exp_descr[iExp].label)
+
+						if(save == "csv"):
+							csv.append(types.SimpleNamespace())
+							csv[-1].Name   = "Exp_"+File_xNames[iFig][i]
+							csv[-1].Values = np.copy(Exp_Data_Diag.xValues)
+							csv.append(types.SimpleNamespace())
+							csv[-1].Name   = "Exp_"+Exp_Data_Diag.yName+" "+exp_descr[iExp].label
+							csv[-1].Values = np.copy(Exp_Data_Diag.yValues)
+							if(Exp_Data_Diag.errors):
+								csv.append(types.SimpleNamespace())
+								csv[-1].Name   = "Exp_"+Exp_Data_Diag.yName+"_err"+" "+exp_descr[iExp].label
+								csv[-1].Values = np.copy(Exp_Data_Diag.yErrors)
+
+			if((log_scale == 0) and (diff == 0) and BottomZero[iFig][i]):
+				Ax[ip].set_ylim(bottom=0.)
+
+		ip = ip0
+		for i in range(len(VPosPlot[iFig])):
+			ip += 1
+#			pyp.setp(Ax[k].yaxis.get_ticklabels(), rotation=90.)
+			Ax[ip].axvline(x=xSep, color='k', linestyle='dashed')
+			if(((len(path) > 1) or (len(evolution) > 1)) and (no_labels == 0) and (diff == 0)):
+				Ax[ip].legend(fontsize='small', loc='lower left')
+
+	if(save != "none"):
+		if(save == "stat"):
+			save_stat("stat_on_rad_mesh_cut.csv", StatHeader, StatValues, StatFormats)
+		elif(save == "csv"):
+			maxLen = 0
+			for ii in range(len(csv)): maxLen = max(maxLen, len(csv[ii].Values))
+			save_cvs= np.zeros((maxLen,len(csv)), dtype='f8')
+			Header = ""
+			for ii in range(len(csv)):
+				Header = Header + csv[ii].Name + ","
+				save_cvs[:len(csv[ii].Values), ii] = csv[ii].Values
+				if(len(csv[ii].Values) < maxLen): save_cvs[len(csv[ii].Values):, ii]  = np.nan
+				
+			if(HasPathLabel): 
+				np.savetxt("rad_mesh_cut_{:s}.{:s}".format(path_label[0], save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
+			else:
+				np.savetxt("plot1d_on_rad_mesh_cut_t={:.3f}.{:s}".format(Tempus, save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
+
+		else:
+			for i in range(len(Fig)):
+				i_plot_file += 1
+				if(one_plot != 1): Fig[i].set_size_inches(10.05,7.44)
+				if(save == "pdf"):
+					pdf.savefig(Fig[i])
+				else:
+					if(HasPathLabel): 
+						Fig[i].savefig("rad_mesh_cut_{:s}_{:d}.{:s}".format(path_label[0],i_plot_file,save))
+					else:
+						Fig[i].savefig("plot1d_on_rad_mesh_cut_t={:.3f}_{:d}.{:s}".format(Tempus,i_plot_file, save))
+
+		pyp.show(block=False)
+		pyp.close()
+	else:
+		pyp.show()
+
+	if(save == "pdf"):	pdf.close()
+
+	print("plot1d_on_rad_mesh_cut: Completed")
+
+	return
+
+
+#===================================================================
+
+def get_transp_parameter_on_mesh(Config, IntCell, iBall):
+
+	Zones = Config.Zones
+
+	Transp = np.empty((IntCell.shape[0]), dtype='f8')
+
+	iZones = np.unique(IntCell[:,0])
+	for iZone in iZones:
+		index = np.where(IntCell[:,0] == iZone)[0]
+		Transp[index] = Zones[iZone].Ballooning[iBall][IntCell[index,1],IntCell[index,2]]
+
+	return Transp
+
+
+#===================================================================
+
+def get_plasma_parameter_on_mesh(Plasma, iPar, IntCell):
+
+	Par = np.empty(IntCell.shape[0], dtype='f8')
+
+	if(Plasma[0].Nx == Plasma[0].Values[iPar].shape[0]):	ijOff = 0
+	else:													ijOff = 1
+	iZones = np.unique(IntCell[:,0])
+	for iZone in iZones:
+		index = np.where(IntCell[:,0] == iZone)[0]
+		Par[index] = Plasma[iZone].Values[iPar][IntCell[index,1]+ijOff,IntCell[index,2]+ijOff]
+
+	return Par
+
+
+#===================================================================
+
+def get_flux_parameter_on_mesh(Fluxes, Config, iPar, IntCell):
+
+	Zones		= Config.Zones
+
+	Par = np.empty((IntCell.shape[0], 5), dtype='f8')
+
+	iZones = np.unique(IntCell[:,0])
+	for iZone in iZones:
+		index = np.where(IntCell[:,0] == iZone)[0]
+		ii = IntCell[index,1]
+		jj = IntCell[index,2]
+		Par[index,:4] = Fluxes[iZone].Values[iPar][ii,jj,:4]
+
+		ii1			  = ii + 1
+		jj1			  = jj + 1
+		SideLen		  = np.sqrt((Zones[iZone].gridR[ii1,jj1] - Zones[iZone].gridR[ii1,jj])**2 + (Zones[iZone].gridZ[ii1,jj1] - Zones[iZone].gridZ[ii1,jj])**2)			#North
+		TotLen		  = np.copy(SideLen)
+		Par[index,4]  = -Par[index,0]*SideLen
+		SideLen		  = np.sqrt((Zones[iZone].gridR[ii,jj1]  - Zones[iZone].gridR[ii,jj])**2  + (Zones[iZone].gridZ[ii,jj1]  - Zones[iZone].gridZ[ii,jj])**2)			#South
+		TotLen		 += SideLen
+		Par[index,4] += Par[index,1]*SideLen
+		SideLen		  = np.sqrt((Zones[iZone].gridR[ii1,jj1] - Zones[iZone].gridR[ii,jj1])**2 + (Zones[iZone].gridZ[ii1,jj1] - Zones[iZone].gridZ[ii,jj1])**2)			#East
+		TotLen		 += SideLen
+		Par[index,4] -= Par[index,2]*SideLen
+		SideLen		  = np.sqrt((Zones[iZone].gridR[ii1,jj]  - Zones[iZone].gridR[ii,jj])**2  + (Zones[iZone].gridZ[ii1,jj]  - Zones[iZone].gridZ[ii,jj])**2)			#West
+		TotLen		 += SideLen
+		Par[index,4] += Par[index,3]*SideLen
+		Par[index,4] /= TotLen
+
+	return Par
+
+
+def get_flux_parameter_on_flux_surfaces(Fluxes, Config, iPar, IntCell, RefPar):
+
+	Zones		= Config.Zones
+	Megazones	= Config.Megazones
+
+	Par = np.zeros((IntCell.shape[0], 3), dtype='f8')
+
+	iZones = np.unique(IntCell[:,0])
+	for iZone in iZones:
+
+		index = np.where(IntCell[:,0] == iZone)[0]
+		ii = IntCell[index,1]
+		ii1 = ii + 1
+
+		for kZone in Megazones[Zones[iZone].mz].list[:]:
+			LenSouth2R	  = np.sqrt((Zones[kZone].gridR[ii ,1:] - Zones[kZone].gridR[ii, :-1])**2 + (Zones[kZone].gridZ[ii ,1:] - Zones[kZone].gridZ[ii, :-1])**2)* \
+								    (Zones[kZone].gridR[ii ,1:] + Zones[kZone].gridR[ii, :-1])*(1.-Zones[kZone].Chi[ii,:])
+			LenNorth2R	  = np.sqrt((Zones[kZone].gridR[ii1,1:] - Zones[kZone].gridR[ii1,:-1])**2 + (Zones[kZone].gridZ[ii1,1:] - Zones[kZone].gridZ[ii1,:-1])**2)* \
+								    (Zones[kZone].gridR[ii1,1:] + Zones[kZone].gridR[ii1,:-1])*(1.-Zones[kZone].Chi[ii,:])
+
+			Par[index,0] += np.sum(Fluxes[kZone].Values[iPar][ii,:,0]*LenNorth2R,axis=1)				#North
+			Par[index,1] += np.sum(Fluxes[kZone].Values[iPar][ii,:,1]*LenSouth2R,axis=1)				#South
+
+			InOut	 = Zones[kZone].Chi[ii,1:] - Zones[kZone].Chi[ii,:-1]
+			InOutMax = np.max(InOut, axis=1)															#East jump up
+			InOutMin = np.min(InOut, axis=1)															#West jump down
+			
+			if(InOutMax.max() > 0):
+				iigt, jgt = np.where(InOut > 0)															#Index jumps plasma to wall at East
+				igt		 = ii[iigt]
+				igt1 	 = igt + 1
+				jgt1	 = jgt + 1
+				LenEast	 = np.sqrt((Zones[kZone].gridR[igt1,jgt1] - Zones[kZone].gridR[igt,jgt1])**2 + (Zones[kZone].gridZ[igt1,jgt1] - Zones[kZone].gridZ[igt,jgt1])**2)* \
+							       (Zones[kZone].gridR[igt1,jgt1] + Zones[kZone].gridR[igt,jgt1])
+				Par[index[iigt],2] -= Fluxes[kZone].Values[iPar][igt,jgt,2]*LenEast
+
+			if(InOutMin.min() < 0):
+				iilt, jlt = np.where(InOut < 0)															#Index jumps  dowm wall to plasma West
+				ilt		  = ii[iilt]
+				ilt1 	  = ilt + 1
+				jlt		  = jlt + 1																			#move to first cell with chi = 0
+				LenEast	  = np.sqrt((Zones[iZone].gridR[ilt1,jlt] - Zones[iZone].gridR[ilt,jlt])**2 + (Zones[iZone].gridZ[ilt1,jlt] - Zones[iZone].gridZ[ilt,jlt])**2)* \
+								    (Zones[iZone].gridR[ilt1,jlt] + Zones[iZone].gridR[ilt,jlt])
+				Par[index[iilt],2] += Fluxes[kZone].Values[iPar][ilt,jlt,3]*LenEast
+		Par[index,2] += Par[index,1] - Par[index,0]
+
+
+	Par *= np.pi		#2*pi*R (alredy multiply by 2*R)
+
+	return Par
+
+#
+# This routine set to the minimum positive value all negative values
+#
+
+def set_min_positive(Values):
+	index_n = np.where(Values < 0.)
+	if(len(index_n[0]) > 0):
+		index_p = np.where(Values >= 0.)
+		min_p   = np.min(Values[index_p])
+		Values[index_n] = min_p
+
+	return Values
+
+
+def indexes(list_strs, str):
+	return  [i for i, j in enumerate(list_strs) if j == str]

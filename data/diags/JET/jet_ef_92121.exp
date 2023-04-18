@@ -1,0 +1,123 @@
+! start a diag with &diag_label
+! common diag parameter:
+!	label   = xxxx		!diagnostic label
+!	type     = xxxx		!diagnostic type: local (for point values on psi or cut), wall (for wall parameters alog wall), line (for chord integrated paramters)
+!	markers = xxxx 	!marker to use in plot (o, +, x, ^, v, <, > and all accepted matplotlib marker)
+!	colors = xxxx		!color to use in plot (b, g, r, c, m, y, k)
+!	sig_label = parameters in h5 file
+! end diag with /
+!
+!	For all diagnostics
+!		sig_times 		= "..."		(time signal)
+!		sig_dense 		= "..."		(electron density)
+!		sig_dense_err 	= "..."		(error on electron density)
+!		sig_tempe 		= "..."		(electron temperature)
+!		sig_tempe_err 	= "..."		(error on temperature density)
+!
+!	For point diagnostics:
+!		Accepted position signals:
+!			sig_dist    = "..."  (dist from separatrix)
+!			sig_length  = "..."  (dist from core surface)
+!			sig_rho_psi = "..."  (normalized flux coordinate)
+!			sig_rho_v   = "..."  (normalized volume coordinante)
+! 
+&globals
+	pulse_type = "H5"
+	pulse_name = "jet"
+	average	   = True
+	shot	   = 92121
+	tstart	   = 49.3
+	tend	   = 49.7
+/
+&thomson_lidar
+	is_on		= False
+	label		= "Lidar"
+	type		= "point"
+	marker		= "o"
+	color		= "r"
+	remove_zero = True
+	sig_times	  		= "ts_lidar_ef/te/times"
+	sig_rho_psi	   		= "ts_lidar_ef/rho"
+	sig_tempe  	   		= "ts_lidar_ef/te"
+	sig_tempe_err 		= "ts_lidar_ef/dte"
+	sig_tempe_max_err 	= 1e3
+	sig_dense			= "ts_lidar_ef/ne"
+	sig_dense_err		= "ts_lidar_ef/dne"
+	sig_dense_min_value	= 1e15
+/
+&thomson_hrts
+	is_on		= True
+	label		= "HRTS"
+	type		= "point"
+	marker		= "o"
+	color		= "g"
+	remove_zero = True
+	sig_times			= "ts_hrts_ef/te/times"
+	sig_rho_psi			= "ts_hrts_ef/rho"
+	sig_rho_psi_offset	= 0.03
+	sig_tempe			= "ts_hrts_ef/te"
+	sig_tempe_err		= "ts_hrts_ef/dte"
+	sig_tempe_max_err 	= 1e2
+	sig_dense			= "ts_hrts_ef/ne"
+	sig_dense_err		= "ts_hrts_ef/dne"
+	sig_dense_min_value	= 1e15
+/
+
+&langmuir
+	is_on		= True
+	label		= "LP"
+	type		= "wall"
+	marker		= "o"
+	color		= "r"
+	average	   = True
+	sig_dist_sp1		= "LP_ef/s_sp1"
+	sig_Tempe_sp1		= "LP_ef/te"
+	sig_Dense_sp1		= "LP_ef/ne"
+	sig_Jsat_par_sp1	= "LP_ef/Jsatp"
+	sig_FluxEtot_sp1	= "LP_ef/Pperp"
+	sig_dist_sp2		= "LP_ef/s_sp2"
+	sig_Tempe_sp2		= "LP_ef/te"
+	sig_Dense_sp2  		= "LP_ef/ne"
+	sig_Jsat_par_sp2	= "LP_ef/Jsatp"
+	sig_FluxEtot_sp2	= "LP_ef/Pperp"
+/
+&BOLO
+	is_on		= True
+	type		= "lines"
+	par_name	= "BOLO"
+	label		= "bolo"
+	marker		= "o"
+	color		= "g"
+	chan_as_x	= True
+	sig_lines_start_end = "bolo_kb5v_ef/los"
+	sig_bolo_data    	= "bolo_kb5v_ef/rad"
+	sig_bolo_max_err 	= 1.e6
+/
+&BEII
+	is_on	= True
+	type	= "lines"
+	par_name= "SPECT_BeII-5270"
+	label	= "BE-II"
+	marker	= "o"
+	color	= "g"
+	sig_be2i_xchans_offset 	  = 0.0
+	sig_be2i_lines_start_end  = "spect_ef/losi"
+	sig_be2i_data    		  = "spect_ef/be2i"
+	sig_be2o_xchans_offset 	  = 0.0
+	sig_be2o_lines_start_end  = "spect_ef/loso"
+	sig_be2o_data   		  = "spect_ef/be2o"
+/
+&Dalpha
+	is_on	= True
+	type	= "lines"
+	par_name= "SPECT_D-ALPHA"
+	label	= "D-alpha"
+	marker	= "o"
+	color	= "r"
+	sig_dai_xchans_offset 	= 0.0
+	sig_dai_lines_start_end = "spect_ef/losi"
+	sig_dai_data    		= "spect_ef/dai"
+	sig_dao_xchans_offset 	= 0.0
+	sig_dao_lines_start_end = "spect_ef/loso"
+	sig_dao_data   		  	= "spect_ef/dao"
+/
