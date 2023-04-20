@@ -109,8 +109,8 @@ from files.save_stat									import save_stat
 #==============================================================================
 
 def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., mod_file="", exp_files="", shot=0, tstart=0., tend=0., log_scale=0, rho_scale=0, psi_scale=0, path_label=[], no_labels=0, d_only=0, all_ions=0, print_lambda=0, diff=0, extra_walls=0, one_plot=0, save="none"):
-
-
+	
+	abspath = path
 	print("plot1d_on_rad_mesh_cut")
 
 	if(diff != 0):
@@ -162,10 +162,12 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 	
 	path0  = path[0]
 	if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
+	
+	abspath = abspath[0]
 
-	RefPar = load_refpar_file(path0+"Results/")
+	RefPar = load_refpar_file(os.path.join(abspath, "Results"))
 
-	ions = load_ions_list(path0)
+	ions = load_ions_list(abspath)
 	if(d_only != 0): ions = ions[0:2]
 	iPlasmas = [i for i in range(len(ions))]
 	
@@ -185,7 +187,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 
 #	Read mesh
 
-	Config = load_soledge_mesh_file(path0+"mesh.h5")
+	Config = load_soledge_mesh_file(os.path.join(abspath,"mesh.h5"))
 
 #	Find mesh along line
 
@@ -253,6 +255,8 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 
 
 	Pars   = [["Dense", "Tempe","(Dens*Temp^1.5)e","Ppi"],["Densi", "Tempi","(Dens*Temp^1.5)i","Mi","velocityi","IRadi"]]
+	
+ 
 	Facts		= [[1e-19,1e-3,1e-19*sqrt(1e-9),1.e-3],[1e-19,1.e-3,1e-19*sqrt(1e-9),1.,1,1e-3]]
 	BottomZero	= [[True,True,True,True],[True,True,False,False,False,True]]
 	PrintDecay	= [[True,True,True,False],[True,True,True,False,False,False]]
@@ -271,9 +275,19 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 		del BottomZero[0][3]
 		del VPosPlot[0][3]
 
-
+	# Neutral override. Replace the main ion part of the plot with atomic and molecular data. 
+	# Variable names are from load_plasma_files and can be found by
+	# for iP in range(len(Plasmas)): print("\t\tiP,VNames: ", iP, Plasmas[iP][0].VNames)
+	neutral_override = True
+	
+	if neutral_override is True:
+		Pars   = [["Dense", "Tempe","(Dens*Temp^1.5)e","Ppi"],["Nni", "Nmi","Tni","Tmi","Pni","vyni"]]
+		yLabels     = [[ "$n\ (*10^{19}\ m^{-3})$", "$T\ (keV)$", "$n*T^{3/2}$", "$Pp\ (kP)$" ], \
+				   ["$na\ (*10^{19}\ m^{-3})$", "$nm\ (*10^{19}\ m^{-3})$", "$Ta\ (keV)$", "$Tm\ (keV)$", "$Ppa\ (kP)$", "$Va\ m/s?$"]]
+		LogScales	= [["log", "log", "log", "log"], ["log", "log", "log", "log", "log", "log"]]
+		IonTitle = "D or D2"
 #	repeat for all ions like the first one
-
+	print
 	for iIon in range(2,len(iIons1)):
 		iPlasma = iIons1[iIon]
 		print("iIon=",iIon)
@@ -398,10 +412,13 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 			Values.append([])
 			VNames.append([])
 
+			# Load species parameters from both the plasma and EIRENE grid.
+			# The first level of Plasmas is ions/neutrals and second is electrons (I think)
 			path0  = path[iPh]
 			if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
 			Plasmas = load_plasma_files(path0, nZones=len(Config.Zones), Evolution=evolution[iEv], iPlasmas=iPlasmas)
 
+			# One iFig per parameter
 			for iFig in range(len(Pars)):
 
 				Values[-1].append([])
@@ -413,16 +430,19 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 					while ((iPar == -1) and (iP < len(Plasmas))):
 						iP += 1
 						try:
+							# Pars[iFig][i] contains parameter names which will be plotted. Ipar is their index
+							# print(Pars[iFig][i])
 							iPar = Plasmas[iP][0].VNames.index(Pars[iFig][i])
 							break
 						except:
 							pass
 
 					if(iPar != -1):
+						
 						Values[-1][iFig].append(get_plasma_parameter_on_mesh(Plasmas[iP], iPar, IntCEll))
 					else:
 						print("\tNot found parameter: ", Pars[iFig][i])
-#						for iP in range(len(Plasmas)): print("\t\tiP,VNames: ", iP, Plasmas[iP][0].VNames)
+						for iP in range(len(Plasmas)): print("\t\tiP,VNames: ", iP, Plasmas[iP][0].VNames)
 						Values[-1][iFig].append(np.zeros_like(Values[0][0][0]))
 						LogScales[iFig][i] = "linear"
 					VNames[-1][iFig].append(Pars[iFig][i])
