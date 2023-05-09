@@ -208,12 +208,12 @@ def plot1d_fluxes_on_rad_mesh_cut(path=[], rz0_line = [2.,0.], theta_line=5., lo
 			if(BALLOONING_NAMES[k] == "Vpinch"):
 				if((input.transport_parameters.pinch_model[0] == 3) and (Config.transp_values_OK)):
 					Transp[k,:] = get_transp_parameter_on_mesh(Config, IntCEll, k)*input.transport_parameters.v_pinch[0]
-				elif(input[-1].transport_parameters.pinch_model[0] == 2):
+				elif(input.transport_parameters.pinch_model[0] == 2):
 					if(TranspCoeffRes == None): TranspCoeffRes = load_transports_coefficients(path0+"Results/", nZones=len(Config.Zones))
 					Transp[iPh,k,:] = get_transp_parameter_on_mesh(TranspCoeff, IntCEll, k)
 				elif(input.transport_parameters.pinch_model[0] == 1):
 					Transp[k,:] = input.transport_parameters.v_pinch[0]
-				elif(input[-1].transport_parameters.pinch_model[0] == 0):
+				elif(input.transport_parameters.pinch_model[0] == 0):
 					Transp[iPh,k,:] = 0.
 				else:
 					print("\tUNKNOWN PINCH MODEL = ",input[-1].transport_parameters.pinch_model[0] )
