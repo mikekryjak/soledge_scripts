@@ -70,7 +70,7 @@ from files.load_transports_coefficients	import load_transports_coefficients
 # This routine plots fluxes on mesh cut
 #==============================================================================
 
-def plot1d_fluxes_on_rad_mesh_cut(path=[], rz0_line = [2.,0.], theta_line=5., log_scale=0, rho_scale=0, no_labels=0, d_only=0, one_plot=0, save="none"):
+def plot1d_fluxes_on_rad_mesh_cut(path=[], rz0_line = [2.,0.], theta_line=5., log_scale=0, rho_scale=0, psi_scale=0, no_labels=0, d_only=0, one_plot=0, save="none"):
 
 	print("plot1d_fluxes_on_rad_mesh_cut")
 
