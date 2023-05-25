@@ -351,7 +351,7 @@ def plot_balances(path="", last=0., y_ranges=[], use_time=0, use_pts=0, log_scal
 	# Energy (per species)
 	for i in range(len(E_iValues)):
 		df[E_labels[i]+"_e"] = balances[0][-last:,E_iValues[i]]*E_facts[i] # Keep factors to stay in [MW]
-		df[E_labels[i]+"_i"] = balances[0][-last:,E_iValues[i]]*E_facts[i] # Keep factors to stay in [MW]
+		df[E_labels[i]+"_i"] = balances[1][-last:,E_iValues[i]]*E_facts[i] # Keep factors to stay in [MW]
 
 	# Now rename the labels to drop latex syntax and unit scaling
 	# Manually specify label mapping for most variables
