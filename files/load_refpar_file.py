@@ -2,6 +2,7 @@
 
 import types
 import h5py
+import os
 from routines.h5_routines import h5_read
 
 #=========================================================
@@ -10,10 +11,9 @@ from routines.h5_routines import h5_read
 
 def load_refpar_file(Path): 
 
-	if((len(Path) > 0) and (Path[-1] != "/")): Path = Path + "/"
 
 	RefPar = types.SimpleNamespace()
-	if_refpar   = h5py.File(Path+"reference_parameters", "r")
+	if_refpar   = h5py.File(os.path.join(Path,"reference_parameters"), "r")
 	RefPar.T0eV	= h5_read(if_refpar, "T0eV",	keep_array=False)
 	RefPar.n0	= h5_read(if_refpar, "n0",		keep_array=False)
 	try:
@@ -33,7 +33,7 @@ def load_refpar_file(Path):
 	if_refpar.close()
 
 	try:
-		if_glob	    = h5py.File(Path+"globals", "r")
+		if_glob	    = h5py.File(os.path.join(Path,"globals"), "r")
 		RefPar.time	= h5_read(if_glob, "tempus",	keep_array=False)
 		if_glob.close()
 	except:
