@@ -49,12 +49,13 @@ import matplotlib.pyplot					as pyp
 from matplotlib.backends.backend_pdf		import PdfPages
 from routines.h5_routines					import h5_read
 from files.load_ions_list				import load_ions_list
+import pandas as pd
 
 #==============================================================================
 # This routine plots ne/ni and Te/Ti ionization and gas pressure on eirene mesh
 #==============================================================================
 
-def plot_balances(path="", last=0., y_ranges=[], use_time=0, use_pts=0, log_scale=0, plot_all=0, one_plot=0, no_samex=0, save="none"):
+def plot_balances(path="", last=0., y_ranges=[], use_time=0, use_pts=0, log_scale=0, plot_all=0, one_plot=0, no_samex=0, no_plot = 0, save="none"):
 
 	print("plot_balances")
 
@@ -173,47 +174,48 @@ def plot_balances(path="", last=0., y_ranges=[], use_time=0, use_pts=0, log_scal
 		y_Labels.append("$(MW)&(MJ)$")
 		y_Labels.append("$(s^{-1})$")
 
-	Fig = []
-	Ax  = []
-	if(one_plot != 1):
-		Fig.append(pyp.figure())
-		for i in range(3):
-			if((i == 0) or (no_samex != 0)):	Ax.append(Fig[-1].add_subplot(3,1,i+1))
-			else:								Ax.append(Fig[-1].add_subplot(3,1,i+1, sharex = Ax[0]))
-		Fig[-1].tight_layout()
-		for i in range(nFigs):	
+	if no_plot == 0:
+		Fig = []
+		Ax  = []
+		if(one_plot != 1):
 			Fig.append(pyp.figure())
-			for k in range(min(PlotPerFig,nPLots-i*PlotPerFig)):
-				if(no_samex != 0):	Ax.append(Fig[-1].add_subplot(nRows,nCols,k+1))
-				else:				Ax.append(Fig[-1].add_subplot(nRows,nCols,k+1, sharex = Ax[0]))
+			for i in range(3):
+				if((i == 0) or (no_samex != 0)):	Ax.append(Fig[-1].add_subplot(3,1,i+1))
+				else:								Ax.append(Fig[-1].add_subplot(3,1,i+1, sharex = Ax[0]))
 			Fig[-1].tight_layout()
-	else:
-		for i in range(nPLots+3):
-			Fig.append(pyp.figure())
-			if((i == 0) or (no_samex != 0)):	Ax.append(Fig[i].add_subplot(111))
-			else:								Ax.append(Fig[i].add_subplot(111, sharex = Ax[0]))
-
-	nFigs  += 1													#Add residual figure
-	nPLots += 3													#Add first page plots
-
-	for i in range(len(y_Labels)):
-		Ax[i].set_xlabel(x_Labels)
-		Ax[i].set_ylabel(y_Labels[i])
-		if(log_scale == 0):
-			Ax[i].set_yscale('linear')
+			for i in range(nFigs):	
+				Fig.append(pyp.figure())
+				for k in range(min(PlotPerFig,nPLots-i*PlotPerFig)):
+					if(no_samex != 0):	Ax.append(Fig[-1].add_subplot(nRows,nCols,k+1))
+					else:				Ax.append(Fig[-1].add_subplot(nRows,nCols,k+1, sharex = Ax[0]))
+				Fig[-1].tight_layout()
 		else:
-			Ax[i].set_yscale('log')
+			for i in range(nPLots+3):
+				Fig.append(pyp.figure())
+				if((i == 0) or (no_samex != 0)):	Ax.append(Fig[i].add_subplot(111))
+				else:								Ax.append(Fig[i].add_subplot(111, sharex = Ax[0]))
 
-		k = i
-		if(i > 0):  k = int((i-1)/2) + 1
-		if(i == 3): k = 1 
-		if((len(y_ranges) > i) and (y_ranges[k] > 0.)):
-			Ax[i].set_ylim((-y_ranges[k], y_ranges[k]))
-			Ax[i].autoscale(enable=True,  axis='x', tight=True)
-			Ax[i].autoscale(enable=False, axis='y', tight=True)
-		else:
-			Ax[i].autoscale(enable=True, axis='both', tight=True)
-		Ax[i].locator_params(axis='y',nbins=4)
+		nFigs  += 1													#Add residual figure
+		nPLots += 3													#Add first page plots
+
+		for i in range(len(y_Labels)):
+			Ax[i].set_xlabel(x_Labels)
+			Ax[i].set_ylabel(y_Labels[i])
+			if(log_scale == 0):
+				Ax[i].set_yscale('linear')
+			else:
+				Ax[i].set_yscale('log')
+
+			k = i
+			if(i > 0):  k = int((i-1)/2) + 1
+			if(i == 3): k = 1 
+			if((len(y_ranges) > i) and (y_ranges[k] > 0.)):
+				Ax[i].set_ylim((-y_ranges[k], y_ranges[k]))
+				Ax[i].autoscale(enable=True,  axis='x', tight=True)
+				Ax[i].autoscale(enable=False, axis='y', tight=True)
+			else:
+				Ax[i].autoscale(enable=True, axis='both', tight=True)
+			Ax[i].locator_params(axis='y',nbins=4)
 
 #	Prepare sum of energies
 
@@ -235,93 +237,151 @@ def plot_balances(path="", last=0., y_ranges=[], use_time=0, use_pts=0, log_scal
 		E_summ[-1] += E_summ[5][0]
 		E_labels.append("$Es_{diff}$")
 
-	Ax[0].set_title(os.path.basename(os.path.abspath(path))+" @ t={:.3f} s".format(tempus))
+	if no_plot == 0:
+		Ax[0].set_title(os.path.basename(os.path.abspath(path))+" @ t={:.3f} s".format(tempus))
 
-	for i in range(len(R_iValues)):
-		Ax[0].plot(x_balances, residuals[-last:,R_iValues[i]]*R_facts[i], R_lines[i], label=R_labels[i])
+		for i in range(len(R_iValues)):
+			Ax[0].plot(x_balances, residuals[-last:,R_iValues[i]]*R_facts[i], R_lines[i], label=R_labels[i])
 
-	all_ions = "e"
-	for Atom in Atoms: all_ions = all_ions + " - " + Atom
-	Ax[1].set_title(all_ions)
-	for i in range(len(E_summ)):
-		Ax[1].plot(x_balances, E_summ[i]*E_facts[i], E_lines[i], label=E_labels[i])
+		all_ions = "e"
+		for Atom in Atoms: all_ions = all_ions + " - " + Atom
+		Ax[1].set_title(all_ions)
+		for i in range(len(E_summ)):
+			Ax[1].plot(x_balances, E_summ[i]*E_facts[i], E_lines[i], label=E_labels[i])
 
-	Ax[2].set_title(ions[1])
-	for i in range(len(N_iValues)):
-		Ax[2].plot(x_balances, balances[1][-last:,N_iValues[i]]*N_facts[i], N_lines[i], label=N_labels[i])
+		Ax[2].set_title(ions[1])
+		for i in range(len(N_iValues)):
+			Ax[2].plot(x_balances, balances[1][-last:,N_iValues[i]]*N_facts[i], N_lines[i], label=N_labels[i])
 
-	Ax[3].set_title(ions[0])
-	Ax[4].set_title(ions[1])
-	for i in range(len(E_iValues)):
-		Ax[3].plot(x_balances,  balances[0][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
-		Ax[4].plot(x_balances,  balances[1][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
+		Ax[3].set_title(ions[0])
+		Ax[4].set_title(ions[1])
+		for i in range(len(E_iValues)):
+			Ax[3].plot(x_balances,  balances[0][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
+			Ax[4].plot(x_balances,  balances[1][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
 
-	ip = 4
-	if(nAtoms > 1):
-		E_lines  = E_lines[:-1]
-		E_labels = E_labels[:-1]
-		iPlasma  = 2
-		for iAtom in range(1,nAtoms):
-			E_summ   = []
-			for k in range(len(E_iValues)):
-				E_summ.append(np.zeros(last, dtype='f8'))
+		dfs = dict()
+	
+		ip = 4
+		# Only active if multiple ion species
+		if(nAtoms > 1):
+			E_lines  = E_lines[:-1]
+			E_labels = E_labels[:-1]
+			iPlasma  = 2
+			for iAtom in range(1,nAtoms):
+				E_summ   = []
+				for k in range(len(E_iValues)):
+					E_summ.append(np.zeros(last, dtype='f8'))
 
-			N_summ   = []
-			for k in range(len(N_iValues)):
-				N_summ.append(np.zeros(last, dtype='f8'))
+				N_summ   = []
+				for k in range(len(N_iValues)):
+					N_summ.append(np.zeros(last, dtype='f8'))
 
-			while((iPlasma < nPlasmas) and (Atoms[iAtom] == ions[iPlasma][:lAtoms[iAtom]])):
-				for i in range(len(E_iValues)): E_summ[i] += balances[iPlasma][-last:,E_iValues[i]]
-				for i in range(len(N_iValues)): N_summ[i] += balances[iPlasma][-last:,N_iValues[i]]
-				iPlasma += 1
+				while((iPlasma < nPlasmas) and (Atoms[iAtom] == ions[iPlasma][:lAtoms[iAtom]])):
+					for i in range(len(E_iValues)): E_summ[i] += balances[iPlasma][-last:,E_iValues[i]]
+					for i in range(len(N_iValues)): N_summ[i] += balances[iPlasma][-last:,N_iValues[i]]
+					iPlasma += 1
 
-			ip += 1
-			Ax[ip].set_title(Atoms[iAtom])
-			for i in range(len(E_iValues)):
-				Ax[ip].plot(x_balances, E_summ[i]*E_facts[i], E_lines[i], label=E_labels[i])
+				ip += 1
+				Ax[ip].set_title(Atoms[iAtom])
+				for i in range(len(E_iValues)):
+					Ax[ip].plot(x_balances, E_summ[i]*E_facts[i], E_lines[i], label=E_labels[i])
 
-			ip += 1
-			Ax[ip].set_title(Atoms[iAtom])
-			for i in range(len(N_iValues)):
-				Ax[ip].plot(x_balances, N_summ[i]*N_facts[i], N_lines[i], label=N_labels[i])
+				ip += 1
+				Ax[ip].set_title(Atoms[iAtom])
+				for i in range(len(N_iValues)):
+					Ax[ip].plot(x_balances, N_summ[i]*N_facts[i], N_lines[i], label=N_labels[i])
 
-	if(plot_all != 0):
-		for iPlasma in range(2,nPlasmas):
-			ip += 1
-			Ax[ip].set_title(ions[iPlasma])
-			for i in range(len(E_iValues)):
-				Ax[ip].plot(x_balances,  balances[iPlasma][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
+		if(plot_all != 0):
+			# Iterate through all species
+			print(ions)
+			for iPlasma in range(2,nPlasmas):
+				ip += 1
+				Ax[ip].set_title(ions[iPlasma])
+				df = pd.DataFrame()
+				for i in range(len(E_iValues)):
+					Ax[ip].plot(x_balances,  balances[iPlasma][-last:,E_iValues[i]]*E_facts[i], E_lines[i], label=E_labels[i])
+					df[E_labels[i]] = balances[iPlasma][-last:,E_iValues[i]]
 
-			ip += 1
-			Ax[ip].set_title(ions[iPlasma])
-			for i in range(len(N_iValues)):
-				Ax[ip].plot(x_balances,  balances[iPlasma][-last:,N_iValues[i]]*N_facts[i], N_lines[i], label=N_labels[i])
-			
+				ip += 1
+				Ax[ip].set_title(ions[iPlasma])
+				for i in range(len(N_iValues)):
+					Ax[ip].plot(x_balances,  balances[iPlasma][-last:,N_iValues[i]]*N_facts[i], N_lines[i], label=N_labels[i])
+				
 
-	for k in range(len(Ax)):
-		Ax[k].legend(fontsize='small', loc='upper left')
-		pyp.setp(Ax[k].yaxis.get_ticklabels(), rotation=90.)
+		for k in range(len(Ax)):
+			Ax[k].legend(fontsize='small', loc='upper left')
+			pyp.setp(Ax[k].yaxis.get_ticklabels(), rotation=90.)
 
-	for figure in Fig:  figure.patch.set_facecolor('white')
+		for figure in Fig:  figure.patch.set_facecolor('white')
 
-	if(save != "none"):
-		for i in range(len(Fig)):
-			i_plot_file += 1
-			if(save == "pdf"):
-				Fig[i].set_size_inches(11.7,8.26)
-				pdf.savefig(Fig[i])
-			else:
-				if(one_plot != 1): Fig[i].set_size_inches(20.,15.)
-				Fig[i].savefig("plot_balances_t={:.3f}_{:d}.".format(tempus,i_plot_file)+save)
+		if(save != "none"):
+			for i in range(len(Fig)):
+				i_plot_file += 1
+				if(save == "pdf"):
+					Fig[i].set_size_inches(11.7,8.26)
+					pdf.savefig(Fig[i])
+				else:
+					if(one_plot != 1): Fig[i].set_size_inches(20.,15.)
+					Fig[i].savefig("plot_balances_t={:.3f}_{:d}.".format(tempus,i_plot_file)+save)
 
-		pyp.show(block=False)
-		pyp.close()
-	else:
-		pyp.show()
+			pyp.show(block=False)
+			pyp.close()
+		else:
+			pyp.show()
 
 	if(save == "pdf"):	pdf.close()
+ 
+	# MK tabular output
+ 
+	# Collect all plotted variables to Pandas dataframe (you can convert it to a dict if you don't like pandas)
+	df = pd.DataFrame()
+ 
+	# Residuals
+	for i in range(len(R_iValues)):
+		df[R_labels[i]] = residuals[-last:,R_iValues[i]]*R_facts[i]
+	
+	# Density
+	for i in range(len(N_iValues)):
+		df[N_labels[i]] = balances[1][-last:,N_iValues[i]] # Do not multiply by N_facts to maintain SI
+		
+	# Energy (total)
+	for i in range(len(E_summ)):
+		df[E_labels[i]+"_tot"] = E_summ[i] * E_facts[i]   # Keep factors to stay in [MW]
+		
+	# Energy (per species)
+	for i in range(len(E_iValues)):
+		df[E_labels[i]+"_e"] = balances[0][-last:,E_iValues[i]]*E_facts[i] # Keep factors to stay in [MW]
+		df[E_labels[i]+"_i"] = balances[0][-last:,E_iValues[i]]*E_facts[i] # Keep factors to stay in [MW]
+
+	# Now rename the labels to drop latex syntax and unit scaling
+	# Manually specify label mapping for most variables
+	label_map = {
+		"$Res_Ne*10^{-3}$" : "Res_Ne",
+		"$Res_ND*10^{-3}$" : "Res_ND",
+		"$Res_Ge*10^{-3}$" : "Res_Ge",
+		"$Res_GD*10^{-3}$" : "Res_GD",
+		"$Res_{Te}*10^{-3}$" : "Res_Te",
+		"$Res_{TD}*10^{-3}$" : "Res_Td",
+		"$\Gamma_{in}*10^{21}$" : "Gamma_in",
+		"$\Gamma_{out}*10^{24}$" : "Gamma_out",
+		"$\Gamma_{sou}*10^{24}$" : "Gamma_sou",
+		"$N_{Var}*10^{22}$" : "N_Var",
+		"$N_{Stored}*10^{21}$" : "N_stored",
+	}
+
+	# Construct label mapping for the energy variables
+	e_map = dict()
+	for label in E_labels:
+		new_label = label.split("$")[1].replace("{","").replace("}","")
+		
+		for suffix in ["_tot", "_i", "_e"]:
+			e_map[label+suffix] = new_label+suffix
+			
+	# Combine label map
+	label_map = {**label_map, **e_map}
+	df = df.rename(label_map, axis = 1)
 
 	print("plot_balances: Completed")
 
-	return
+	return df
 
