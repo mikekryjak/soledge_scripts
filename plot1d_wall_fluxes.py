@@ -328,16 +328,16 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 	df = pd.DataFrame()
 	df["R"] = WallR    # Element R coord
 	df["Z"] = WallZ    # Element Z coord
-	df["L"] = WallL    # Element length
-	df["pflux_i"] = Fluxi   # Ion particle flux
-	df["hflux_tot"] = FluxETot
-	df["hflux_totrad"] = FluxERadTot
-	df["hflux_par_tot"] = FluxETotei
-	df["hflux_par_e"] = FluxEe
-	df["hflux_par_i"] = FluxEi
-	df["hflux_a"] = fluxN[0]   # Neutral atom hflux
-	df["hflux_m"] = fluxN[1]   # Neutral molecule hflux
-	df["hflux_n"] = fluxN[0] + fluxN[1]    # Total neutral hflux
+	df["L"] = WallL    # Cumulative element length
+	df["pflux_i"] = Fluxi   # Ion particle flux [s-1m-2]
+	df["hflux_tot"] = FluxETot   # Total energy flux [Wm-2]
+	df["hflux_totrad"] = FluxERadTot   # Total radiation flux [Wm-2]
+	df["hflux_par_tot"] = TFluxETotei   # Incident e+i heat flux [Wm-2]
+	df["hflux_par_e"] = FluxEe    # Incident e heat flux [Wm-2]
+	df["hflux_par_i"] = FluxEi    # Incident i heat flux [Wm-2]
+	df["hflux_a"] = fluxN[0]   # Neutral atom hflux   [s-1m-2]
+	df["hflux_m"] = fluxN[1]   # Neutral molecule hflux   [s-1m-2]
+	df["hflux_n"] = fluxN[0] + fluxN[1]    # Total neutral hflux   [s-1m-2]
 
 	print("plot1d_wall_fluxes: Completed")
 
