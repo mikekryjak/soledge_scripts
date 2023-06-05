@@ -329,15 +329,16 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 	df["R"] = WallR    # Element R coord
 	df["Z"] = WallZ    # Element Z coord
 	df["L"] = WallL    # Cumulative element length
-	df["pflux_i"] = Fluxi   # Ion particle flux [s-1m-2]
-	df["hflux_tot"] = FluxETot   # Total energy flux [Wm-2]
-	df["hflux_totrad"] = FluxERadTot   # Total radiation flux [Wm-2]
-	df["hflux_par_tot"] = TFluxETotei   # Incident e+i heat flux [Wm-2]
-	df["hflux_par_e"] = FluxEe    # Incident e heat flux [Wm-2]
-	df["hflux_par_i"] = FluxEi    # Incident i heat flux [Wm-2]
-	df["hflux_a"] = fluxN[0]   # Neutral atom hflux   [s-1m-2]
-	df["hflux_m"] = fluxN[1]   # Neutral molecule hflux   [s-1m-2]
-	df["hflux_n"] = fluxN[0] + fluxN[1]    # Total neutral hflux   [s-1m-2]
+	df["dL"] = WalldL    # Element length
+	df["pflux_i"] = Fluxi*1e22   # Ion particle flux [s-1m-2]
+	df["hflux_tot"] = FluxETot   # Total energy flux [MWm-2]
+	df["hflux_totrad"] = FluxERadTot   # Total radiation flux [MWm-2]
+	df["hflux_par_tot"] = TFluxETotei   # Incident e+i heat flux [MWm-2] ??? doesn't add up to the above two
+	df["hflux_par_e"] = FluxEe    # Incident e heat flux [MWm-2]
+	df["hflux_par_i"] = FluxEi    # Incident i heat flux [MWm-2]
+	df["pflux_a"] = fluxN[0]*1e22   # Neutral atom flux   [s-1m-2]
+	df["pflux_m"] = fluxN[1]*1e22   # Neutral molecule flux   [s-1m-2]
+	df["pflux_n"] = fluxN[0]*1e22 + fluxN[1]*1e22*2    # Total neutral flux   [s-1m-2]
 
 	print("plot1d_wall_fluxes: Completed")
 
