@@ -68,7 +68,7 @@ def plot2d_fluxes_mesh(path="", log_scale=0, d_only=0, one_plot=0, no_shade=0, n
 
 #	Read mesh
 
-	Config = load_soledge_mesh_file(path+"mesh.h5")
+	Config = load_soledge_mesh_file(os.path.join(path,"mesh.h5"))
 
 	Zones	= Config.Zones
 	nZones	= len(Zones)
