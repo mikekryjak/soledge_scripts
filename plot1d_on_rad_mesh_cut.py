@@ -38,6 +38,7 @@ if __name__ == "__main__":
 		print("\t-extra_walls    Flag to show extra walls [d=false]")
 		print("\t-one_plot       One plot on each figure [d=false]")
 		print("\t-save           Save figures on files, values=none/png/ps/eps/pdf/stat [D='none']")
+		print("\t-neutral_override           Show data for neutrals instead of ions")
 		print()
 		exit()
 
@@ -62,7 +63,16 @@ if __name__ == "__main__":
 	diff				= cli_present("-diff",				sys.argv)
 	extra_walls		= cli_present("-extra_walls",		sys.argv)
 	one_plot		= cli_present("-one_plot",			sys.argv)
-	plot1d_on_rad_mesh_cut(path=path, evolution=evolution, rz0_line=rz0_line, theta_line=theta_line, mod_file=mod_file, exp_files=exp_files, shot=shot, tstart=tstart, tend=tend, path_label=path_label, no_labels=no_labels, d_only=d_only, all_ions=all_ions, log_scale=log_scale, rho_scale=rho_scale, psi_scale=psi_scale, print_lambda=print_lambda, diff=diff, extra_walls=extra_walls, one_plot=one_plot, save=save)
+	neutral_override		= cli_present("-neutral_override",			sys.argv)
+ 
+	##########################
+	# SETTINGS OVERRIDES... CLI CAPTURE BROKEN
+	##########################
+	# save = "csv"
+	save = "none"
+	theta_line = 180
+	neutral_override = False
+	plot1d_on_rad_mesh_cut(path=path, evolution=evolution, rz0_line=rz0_line, theta_line=theta_line, mod_file=mod_file, exp_files=exp_files, shot=shot, tstart=tstart, tend=tend, path_label=path_label, no_labels=no_labels, d_only=d_only, all_ions=all_ions, log_scale=log_scale, rho_scale=rho_scale, psi_scale=psi_scale, print_lambda=print_lambda, diff=diff, extra_walls=extra_walls, one_plot=one_plot, save=save, neutral_override = neutral_override)
 	exit()
 
 #=======================================
@@ -108,7 +118,7 @@ from files.save_stat									import save_stat
 # This routine plots ne/ni and Te/Ti ionization and gas pressure on eirene mesh
 #==============================================================================
 
-def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., mod_file="", exp_files="", shot=0, tstart=0., tend=0., log_scale=0, rho_scale=0, psi_scale=0, path_label=[], no_labels=0, d_only=0, all_ions=0, print_lambda=0, diff=0, extra_walls=0, one_plot=0, save="none"):
+def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., mod_file="", exp_files="", shot=0, tstart=0., tend=0., log_scale=0, rho_scale=0, psi_scale=0, path_label=[], no_labels=0, d_only=0, all_ions=0, print_lambda=0, diff=0, extra_walls=0, one_plot=0, save="none", neutral_override=False):
 	
 	abspath = path
 	print("plot1d_on_rad_mesh_cut")
@@ -190,8 +200,8 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 	Config = load_soledge_mesh_file(os.path.join(abspath,"mesh.h5"))
 
 #	Find mesh along line
-
-	if(len(rz0_line) == 0):
+	
+ 	if(len(rz0_line) == 0):	
 		Rcore, Zcore, CoreMegazone = get_rz_core_sep(Config, core_and_sep = False)
 		rz0_line = [0.5*(Rcore.min() + Rcore.max()), Zcore[np.argmax(Rcore)]]
 
@@ -278,7 +288,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 	# Neutral override. Replace the main ion part of the plot with atomic and molecular data. 
 	# Variable names are from load_plasma_files and can be found by
 	# for iP in range(len(Plasmas)): print("\t\tiP,VNames: ", iP, Plasmas[iP][0].VNames)
-	neutral_override = True
+	
 	
 	if neutral_override is True:
 		Pars   = [["Dense", "Tempe","(Dens*Temp^1.5)e","Ppi"],["Nni", "Nmi","Tni","Tmi","Pni","vyni"]]
@@ -340,6 +350,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 	TranspCoeffMesh = TranspCoeffRes = None
 
 	input = []
+	
 	for iPh in range(len(path)):
 		path0  = path[iPh]
 		if((len(path0) > 0) and (path0[-1] != "/")): path0 = path0 + "/"
@@ -555,7 +566,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 
 
 #	Draw extra plots
-
+	print(f"*************************\n{Transp.shape}\n*****************************")
 	ip = -1
 	for i in range(len(EPosPlot)):
 		ip += 1
@@ -573,7 +584,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 
 			Ax[ip].plot(IntRZ[Out_Sep,0], IntRZ[Out_Sep,1], 'g.-')
 			Ax[ip].plot(IntRZ[In_Sep,0],  IntRZ[In_Sep,1],  'b.-')
-
+		
 		elif((i == 1) or (i == 2)) :														#plot balloning
 			Ax[ip].set_xlabel(xLabels[0][0])
 			if(len(path) == 1):
@@ -699,11 +710,12 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 			Ax[ip].axvline(x=xSep, color='k', linestyle='dashed')
 			if(((len(path) > 1) or (len(evolution) > 1)) and (no_labels == 0) and (diff == 0)):
 				Ax[ip].legend(fontsize='small', loc='lower left')
-
+	print(f"*************************\nSAVING {save}\n*****************************")
 	if(save != "none"):
 		if(save == "stat"):
 			save_stat("stat_on_rad_mesh_cut.csv", StatHeader, StatValues, StatFormats)
 		elif(save == "csv"):
+			
 			maxLen = 0
 			for ii in range(len(csv)): maxLen = max(maxLen, len(csv[ii].Values))
 			save_cvs= np.zeros((maxLen,len(csv)), dtype='f8')
@@ -714,9 +726,10 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 				if(len(csv[ii].Values) < maxLen): save_cvs[len(csv[ii].Values):, ii]  = np.nan
 				
 			if(HasPathLabel): 
-				np.savetxt("rad_mesh_cut_{:s}.{:s}".format(path_label[0], save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
+				
+				np.savetxt("rad_mesh_cut_{:s}_neut={}.{:s}".format(path_label[0], neutral_override, save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
 			else:
-				np.savetxt("plot1d_on_rad_mesh_cut_t={:.3f}.{:s}".format(Tempus, save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
+				np.savetxt("plot1d_on_rad_mesh_cut_t={:.3f}_neut={}.{:s}".format(Tempus, neutral_override, save), save_cvs, header=Header[:-1], delimiter=",", fmt="%15.7e", comments="")
 
 		else:
 			for i in range(len(Fig)):
