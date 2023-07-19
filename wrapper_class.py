@@ -2,6 +2,7 @@ from files.load_soledge_mesh_file				import load_soledge_mesh_file
 from files.load_plasma_files						import load_plasma_files
 from files.load_ions_list								import load_ions_list
 from files.load_refpar_file				import load_refpar_file
+from files.load_eirene_triangles					import load_eirene_triangles
 from mesh.get_rz_core_sep						import get_rz_core_sep
 from mesh.get_rho_in_out_core_sep		import get_rho_in_out_core_sep
 from mesh.find_zones_intersections			import find_zones_intersections
@@ -45,16 +46,27 @@ class SOLEDGEcase():
             
             # Load grid
             if_tri	 = h5py.File(os.path.join(path,"triangles.h5"), "r")
-            TriKnots = h5_read(if_tri,"triangles/tri_knots", messages = 0)
-            TriKnots = TriKnots - 1 										#Matlab/Fortan to python indexes
+            self.TriKnots = h5_read(if_tri,"triangles/tri_knots", messages = 0)
+            self.TriKnots = self.TriKnots - 1 										#Matlab/Fortan to python indexes
             self.R		 = h5_read(if_tri,"knots/R", messages = 0)*0.01
             self.Z		 = h5_read(if_tri,"knots/Z", messages = 0)*0.01
             if_tri.close()
-            self.TripTriang = mpl.tri.Triangulation(self.R, self.Z, triangles=TriKnots)
+            self.TripTriang = mpl.tri.Triangulation(self.R, self.Z, triangles=self.TriKnots)
+            self.Eirene = load_eirene_triangles(os.path.join(path, "triangles.h5"))
             
-            # Grid extents
+            # Grid extents and wall
             self.Rlim = [self.R.min(), self.R.max()]
             self.Zlim = [self.Z.min(), self.Z.max()]
+            if_mesh = h5py.File(os.path.join(path, "mesh.h5"), "r")
+
+            try:
+                self.Rwall	= h5_read(if_mesh, "walls/wall1/R")
+                self.Zwall	= h5_read(if_mesh, "walls/wall1/Z")
+            except:
+                self.Rwall	= h5_read(if_mesh, "wall/R")
+                self.Zwall	= h5_read(if_mesh, "wall/Z")
+
+            if_mesh.close()
             
     
     def plot_2d(
