@@ -424,7 +424,7 @@ class SOLEDGEcase():
             
         return iPlasma, iPar
     
-    def get_wall_fluxes(self):
+    def get_wall_fluxes(self, verbose = True):
         
         ### Get wall coordinates and lengths
         ZeroTriangle, ZeroSide, Ri, Zi = get_wall_triangle(self.Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1)
@@ -432,6 +432,16 @@ class SOLEDGEcase():
         R = self.R
         Z = self.Z
         TriKnots = self.TriKnots
+        
+        try:
+            AFluxF	 = np.loadtxt(os.path.join(self.path, "soledge2D.atoms_fluxes_wall_1"), dtype='f8')
+        #            		[0:iTri, 1:iSide, 2:iProp, 3:dlWall, 
+        #					 4:Flux_Atom_Incident, 			5:Flux_Mol_Incident,
+        #					 6:Flux_Atom_Emitted_from_Ion, 	7:Flux_Mol_Emitted_from_Ion,
+        #					 8:Flux_Atom_Emitted_from_Atom, 9:Flux_Mol_Emitted_from_Atom]
+        except:
+            print("\tError: Not found "+ self.path+"soledge2D.atoms_fluxes_wall_1")
+            exit()
 
         iTri	= AFluxF[:,0]-1 										#Matlab/Fortan to python indexes
         iSide	= AFluxF[:,1]-1 										#Matlab/Fortan to python indexes
@@ -462,105 +472,98 @@ class SOLEDGEcase():
         WalldL  = np.sqrt((R[TriKnots[iTri,Vertex[iSide,0]]]-R[TriKnots[iTri,Vertex[iSide,1]]])**2 + \
                             (Z[TriKnots[iTri,Vertex[iSide,0]]]-Z[TriKnots[iTri,Vertex[iSide,1]]])**2)
         
-        ## Read ion fluxes
+        df = pd.DataFrame(columns = ["iTri", "iSide", "iProp", "dlSurf", "dlWall", "Area"])
+        df["R"] = WallR
+        df["Z"] = WallZ
+
+        ## --------------- Read ion fluxes
         try:
-            FluxiF	 = np.loadtxt(os.path.join(path,"soledge2D.ion_fluxes_wall_1"), dtype='f8')
-            """
-            [0:iTri, 1:iSide, 2:iProp, 3:dlSurf, 
-            4:Flux_Ion_Incident, 5:Flux_Atom_Emitted_from_Ion]
-            """
+            FluxiF	 = np.loadtxt(os.path.join(self.path,"soledge2D.ion_fluxes_wall_1"), dtype='f8')
         except:
-            print("\tError: Not found "+ path+"soledge2D.ion_fluxes_wall_1")
+            print("\tError: Not found "+ self.path+"soledge2D.ion_fluxes_wall_1")
             exit()
         Fluxi =  FluxiF[zOrder,4]*1e-22
 
-
-        ## Read neutral fluxes (again for some reason)
+        for i, name in enumerate(["iTri", "iSide", "iProp", "dlSurf", 
+                        "F_Ion_Incident", "F_Atom_Emitted_from_Ion"]):
+            
+            df[name] = FluxiF[zOrder, i]
+            
+        ## --------------- Read neutral fluxes (again for some reason)
         # FluxiN is a list of arrays, each a different neutral species
         FluxiN=[]
         try:
-            FluxiN.append(np.loadtxt(os.path.join(path, "soledge2D.atoms_fluxes_wall_1"), dtype='f8'))
-            """
-            [0:iTri, 1:iSide, 2:iProp, 3:dlWall, 
-            4:Flux_Atom_Incident, 			5:Flux_Mol_Incident,
-            6:Flux_Atom_Emitted_from_Ion, 	7:Flux_Mol_Emitted_from_Ion,
-            8:Flux_Atom_Emitted_from_Atom, 9:Flux_Mol_Emitted_from_Atom]
-            """
+            FluxiN.append(np.loadtxt(os.path.join(self.path, "soledge2D.atoms_fluxes_wall_1"), dtype='f8'))
             i=2
             while(os.path.isfile('./soledge2D.atoms_fluxes_wall_'+str(i))):
-                FluxiN.append(np.loadtxt(path+"soledge2D.atoms_fluxes_wall_"+str(i), dtype='f8'))
+                FluxiN.append(np.loadtxt(self.path+"soledge2D.atoms_fluxes_wall_"+str(i), dtype='f8'))
                 i=i+1
         except:
-            print("\tError: Not found "+ path+"soledge2D.atoms_fluxes_wall_1")
+            print("\tError: Not found "+ self.path+"soledge2D.atoms_fluxes_wall_1")
             exit()
             
-        FluxE_details = {}
-        FluxE = {}
+        for i, name in enumerate(["iTri", "iSide", "iProp", "dlWall", 
+                    "F_Atom_Incident", 			"F_Mol_Incident",
+                    "F_Atom_Emitted_from_Ion", 	"F_Mol_Emitted_from_Ion",
+                    "F_Atom_Emitted_from_Atom", "F_Mol_Emitted_from_Atom"]):
+            
+            df[name] = FluxiN[0][zOrder, i]
 
-        ### Read neutral energy fluxes
+        ## --------------- Read neutral energy fluxes
         try:
 
-            EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_details_1"), dtype='f8', comments="%")
-            FluxE_details["dlWall"] = EFluxF[zOrder,0]
+            EFluxF	 = np.loadtxt(os.path.join(self.path, "soledge2D.energy_fluxes_details_1"), dtype='f8', comments="%")
             
             for i, name in enumerate(
-                ["dlWall", "Flux_Energy_incident_Electron", 	"Flux_Energy_incident_Ions",
-                "Flux_Energy_Total",				"Flux_Energy_incident_Atoms",
-                "Flux_Energy_Radiation_Atoms",		"Flux_Energy_Rad_Recombination",
-                "Flux_Energy_Recombination_in_Wall", "Flux_Energy_incident_Molecules"]):
-                FluxE_details[name] = EFluxF[zOrder,i]
-                if name != "dlWall":
-                    FluxE_details[name] *= 1e-6   # MW
+                ["dlWall", "E_incident_Electron", 	"E_incident_Ions",
+                "E_Total",				"E_incident_Atoms",
+                "E_Radiation_Atoms",		"E_Rad_Recombination",
+                "E_Recombination_in_Wall", "E_incident_Molecules"]):
+                
+                if name not in ["dlWall"]:
+                    df[name] = EFluxF[zOrder,i]
 
-
-            EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_1"), dtype='f8', comments="%")
+            EFluxF	 = np.loadtxt(os.path.join(self.path, "soledge2D.energy_fluxes_1"), dtype='f8', comments="%")
             
             for i, name in enumerate(
                 [
                 "iTri", "iSide",                   "iProp", "dlWall", 
-                "Flux_Energy_incident_Ions_EIRENE", "Flux_Energy_incident_Electron",
-                "Flux_Energy_incident_Ions",		   "Flux_Energy_Total",				
-                "Flux_Energy_incident_Atoms",	   "Flux_Energy_Radiation",		
+                "E_incident_Ions_EIRENE", "E_incident_Electron",
+                "E_incident_Ions",		   "E_Total",				
+                "E_incident_Atoms",	   "E_Radiation",		
                 "Area"
                 ]
             ):
-                FluxE[name] = EFluxF[zOrder, i]
-                
                 if not any([x in name for x in ["iTri", "iSide", "iProp", "dlWall"]]):
-                    FluxE[name] *= 1e-6   # MW
+                    df[name] = EFluxF[zOrder, i]
                 
         except:
-            print("\tError: Not found "+ path+"soledge2D.energy_fluxes_details_1")
-            exit()
+            raise Exception("\tError: Not found "+ self.path+"soledge2D.energy_fluxes_details_1")
             
         ## Not sure what's happening here
-        fluxN=[]	#Neutral flux to the wall	[[fD][fD2][fI1]...[fIn]]
-        fluxN.append(FluxiN[0][zOrder,4])
-        fluxN.append(FluxiN[0][zOrder,5])
-        for i in range(len(FluxiN)-1):
-            fluxN.append(FluxiN[i+1][zOrder,4])
-        for i in range(len(fluxN)):
-            fluxN[i]=fluxN[i]*1e-22
+        # fluxN=[]	#Neutral flux to the wall	[[fD][fD2][fI1]...[fIn]]
+        # fluxN.append(FluxiN[0][zOrder,4])
+        # fluxN.append(FluxiN[0][zOrder,5])
+        # for i in range(len(FluxiN)-1):
+        #     fluxN.append(FluxiN[i+1][zOrder,4])
+        # for i in range(len(fluxN)):
+        #     fluxN[i]=fluxN[i]*1e-22
             
         ### Get the total integrals
-        TFluxE_details = {}
-        for name in FluxE_details:
-            if name not in ["dlWall"]:
-                TFluxE_details[name] = 2*np.pi*np.sum(FluxE_details[name] * WalldL * WallR)
-                print(f"{name}: {TFluxE_details[name]:.2f} MW")
-
-        TFluxE = {}
-        for name in FluxE:
-            if name not in ["iTri", "iSide", "iProp", "dlWall", "Area"]:
-                TFluxE[name] = 2*np.pi*np.sum(FluxE[name] * WalldL * WallR)
-                print(f"{name}: {TFluxE[name]:.2f} MW")
+        if verbose is True:
+            print(f"\n### TOTAL WALL INTEGRALS------------")
+            print(f"\n### Heat flows:")
+            for col in df.columns:
+                if "E_" in col:
+                    print(f"{col}: ---- {(df[col]*df['Area'] * 1e-6).sum():.2f} [MW]")
+            
+            print(f"\n### Particle flows:")      
+            for col in df.columns:
+                if "F_" in col:
+                    print(f"{col}: ---- {(df[col]*df['Area']).sum():.3e} [s-1]")
                 
-        ### Return dict of dataframes containing fluxes around the whole wall
-        wall_fluxes = {}
-        wall_fluxes["FluxE"] = pd.DataFrame.from_dict(FluxE)
-        wall_fluxes["FluxE_details"] = pd.DataFrame.from_dict(FluxE_details)
         
-        return wall_fluxes
+        return df
     
     def _get_rz_sep(self):
 
