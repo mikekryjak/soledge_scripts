@@ -10,6 +10,7 @@ from mesh.compute_mesh_intersections	import compute_mesh_intersections
 from routines.intersect_contour				import intersect_2contours
 from routines.utils_walls							import get_in_out_walls, plot2d_walls, get_dmax_points_walls
 from routines.h5_routines							import h5_read
+from eirene.get_wall_triangle					import get_wall_triangle
 from math													import sqrt, exp
 import numpy											as np
 import os, sys
@@ -26,6 +27,9 @@ class SOLEDGEcase():
                  verbose = False):
         
         with HiddenPrints() if verbose is False else contextlib.nullcontext():  # Suppress all prints
+            
+            self.path = path 
+            
             #	Read mesh
             self.Config = load_soledge_mesh_file(os.path.join(path,"mesh.h5"))
             
@@ -44,7 +48,7 @@ class SOLEDGEcase():
             # Load reference parameters
             self.RefPar = load_refpar_file(os.path.join(path, "Results"))
             
-            # Load grid
+            # Load triangle grid
             if_tri	 = h5py.File(os.path.join(path,"triangles.h5"), "r")
             self.TriKnots = h5_read(if_tri,"triangles/tri_knots", messages = 0)
             self.TriKnots = self.TriKnots - 1 										#Matlab/Fortan to python indexes
@@ -54,7 +58,7 @@ class SOLEDGEcase():
             self.TripTriang = mpl.tri.Triangulation(self.R, self.Z, triangles=self.TriKnots)
             self.Eirene = load_eirene_triangles(os.path.join(path, "triangles.h5"))
             
-            # Grid extents and wall
+            ### Plasma grid extents and wall
             self.Rlim = [self.R.min(), self.R.max()]
             self.Zlim = [self.Z.min(), self.Z.max()]
             if_mesh = h5py.File(os.path.join(path, "mesh.h5"), "r")
@@ -67,6 +71,9 @@ class SOLEDGEcase():
                 self.Zwall	= h5_read(if_mesh, "wall/Z")
 
             if_mesh.close()
+            
+            # EIRENE wall extents
+            ZeroTriangle, ZeroSide, Ri, Zi = get_wall_triangle(self.Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1)
             
     
     def plot_2d(
@@ -119,6 +126,8 @@ class SOLEDGEcase():
             lhs, rhs = self._get_rz_sep()
             ax.plot(lhs["R"], lhs["Z"], lw = lw, c = c)
             ax.plot(rhs["R"], rhs["Z"], lw = lw, c = c)
+            
+        self.params = self.Plasmas[iPlasma][0].Triangles.VNames + self.Plasmas[iPlasma][1].Triangles.VNames
             
             
     def get_1d_radial_data(
@@ -415,6 +424,143 @@ class SOLEDGEcase():
             
         return iPlasma, iPar
     
+    def get_wall_fluxes(self):
+        
+        ### Get wall coordinates and lengths
+        ZeroTriangle, ZeroSide, Ri, Zi = get_wall_triangle(self.Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1)
+
+        R = self.R
+        Z = self.Z
+        TriKnots = self.TriKnots
+
+        iTri	= AFluxF[:,0]-1 										#Matlab/Fortan to python indexes
+        iSide	= AFluxF[:,1]-1 										#Matlab/Fortan to python indexes
+        WallL	= AFluxF[:,3]
+
+
+        Vertex	= np.array([[0,1],[1,2],[2,0]], dtype='i4')
+        iTri	= iTri.astype(int)
+        iSide	= iSide.astype(int)
+
+        iZero = np.where(iTri == ZeroTriangle); iZero = iZero[0]
+        if(len(iZero) != 1):
+            print("\tError: not found wall triangle intersection with line")
+            exit()
+
+        iZero  = iZero[0]
+        zOrder = np.arange(len(iTri))
+        zOrder = np.append(zOrder[iZero:], zOrder[:iZero]) 
+        iTri   = iTri[zOrder]
+
+        iSide  = iSide[zOrder]
+        WallL[iZero:]  = WallL[iZero:] - WallL[iZero]
+        WallL[:iZero]  = WallL[:iZero] - WallL[0] + WallL[-1]
+        WallL		   = WallL[zOrder]
+
+        WallR	= 0.5*(R[TriKnots[iTri,Vertex[iSide,0]]]+R[TriKnots[iTri,Vertex[iSide,1]]])
+        WallZ	= 0.5*(Z[TriKnots[iTri,Vertex[iSide,0]]]+Z[TriKnots[iTri,Vertex[iSide,1]]])
+        WalldL  = np.sqrt((R[TriKnots[iTri,Vertex[iSide,0]]]-R[TriKnots[iTri,Vertex[iSide,1]]])**2 + \
+                            (Z[TriKnots[iTri,Vertex[iSide,0]]]-Z[TriKnots[iTri,Vertex[iSide,1]]])**2)
+        
+        ## Read ion fluxes
+        try:
+            FluxiF	 = np.loadtxt(os.path.join(path,"soledge2D.ion_fluxes_wall_1"), dtype='f8')
+            """
+            [0:iTri, 1:iSide, 2:iProp, 3:dlSurf, 
+            4:Flux_Ion_Incident, 5:Flux_Atom_Emitted_from_Ion]
+            """
+        except:
+            print("\tError: Not found "+ path+"soledge2D.ion_fluxes_wall_1")
+            exit()
+        Fluxi =  FluxiF[zOrder,4]*1e-22
+
+
+        ## Read neutral fluxes (again for some reason)
+        # FluxiN is a list of arrays, each a different neutral species
+        FluxiN=[]
+        try:
+            FluxiN.append(np.loadtxt(os.path.join(path, "soledge2D.atoms_fluxes_wall_1"), dtype='f8'))
+            """
+            [0:iTri, 1:iSide, 2:iProp, 3:dlWall, 
+            4:Flux_Atom_Incident, 			5:Flux_Mol_Incident,
+            6:Flux_Atom_Emitted_from_Ion, 	7:Flux_Mol_Emitted_from_Ion,
+            8:Flux_Atom_Emitted_from_Atom, 9:Flux_Mol_Emitted_from_Atom]
+            """
+            i=2
+            while(os.path.isfile('./soledge2D.atoms_fluxes_wall_'+str(i))):
+                FluxiN.append(np.loadtxt(path+"soledge2D.atoms_fluxes_wall_"+str(i), dtype='f8'))
+                i=i+1
+        except:
+            print("\tError: Not found "+ path+"soledge2D.atoms_fluxes_wall_1")
+            exit()
+            
+        FluxE_details = {}
+        FluxE = {}
+
+        ### Read neutral energy fluxes
+        try:
+
+            EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_details_1"), dtype='f8', comments="%")
+            FluxE_details["dlWall"] = EFluxF[zOrder,0]
+            
+            for i, name in enumerate(
+                ["dlWall", "Flux_Energy_incident_Electron", 	"Flux_Energy_incident_Ions",
+                "Flux_Energy_Total",				"Flux_Energy_incident_Atoms",
+                "Flux_Energy_Radiation_Atoms",		"Flux_Energy_Rad_Recombination",
+                "Flux_Energy_Recombination_in_Wall", "Flux_Energy_incident_Molecules"]):
+                FluxE_details[name] = EFluxF[zOrder,i]
+                if name != "dlWall":
+                    FluxE_details[name] *= 1e-6   # MW
+
+
+            EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_1"), dtype='f8', comments="%")
+            
+            for i, name in enumerate(
+                [
+                "iTri", "iSide",                   "iProp", "dlWall", 
+                "Flux_Energy_incident_Ions_EIRENE", "Flux_Energy_incident_Electron",
+                "Flux_Energy_incident_Ions",		   "Flux_Energy_Total",				
+                "Flux_Energy_incident_Atoms",	   "Flux_Energy_Radiation",		
+                "Area"
+                ]
+            ):
+                FluxE[name] = EFluxF[zOrder, i]
+                
+                if not any([x in name for x in ["iTri", "iSide", "iProp", "dlWall"]]):
+                    FluxE[name] *= 1e-6   # MW
+                
+        except:
+            print("\tError: Not found "+ path+"soledge2D.energy_fluxes_details_1")
+            exit()
+            
+        ## Not sure what's happening here
+        fluxN=[]	#Neutral flux to the wall	[[fD][fD2][fI1]...[fIn]]
+        fluxN.append(FluxiN[0][zOrder,4])
+        fluxN.append(FluxiN[0][zOrder,5])
+        for i in range(len(FluxiN)-1):
+            fluxN.append(FluxiN[i+1][zOrder,4])
+        for i in range(len(fluxN)):
+            fluxN[i]=fluxN[i]*1e-22
+            
+        ### Get the total integrals
+        TFluxE_details = {}
+        for name in FluxE_details:
+            if name not in ["dlWall"]:
+                TFluxE_details[name] = 2*np.pi*np.sum(FluxE_details[name] * WalldL * WallR)
+                print(f"{name}: {TFluxE_details[name]:.2f} MW")
+
+        TFluxE = {}
+        for name in FluxE:
+            if name not in ["iTri", "iSide", "iProp", "dlWall", "Area"]:
+                TFluxE[name] = 2*np.pi*np.sum(FluxE[name] * WalldL * WallR)
+                print(f"{name}: {TFluxE[name]:.2f} MW")
+                
+        ### Return dict of dataframes containing fluxes around the whole wall
+        wall_fluxes = {}
+        wall_fluxes["FluxE"] = pd.DataFrame.from_dict(FluxE)
+        wall_fluxes["FluxE_details"] = pd.DataFrame.from_dict(FluxE_details)
+        
+        return wall_fluxes
     
     def _get_rz_sep(self):
 
