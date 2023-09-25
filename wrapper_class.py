@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import contextlib
 import h5py
+import scipy
 
 
 class SOLEDGEcase():
@@ -50,7 +51,7 @@ class SOLEDGEcase():
             
             # Load triangle grid
             if_tri	 = h5py.File(os.path.join(path,"triangles.h5"), "r")
-            self.TriKnots = h5_read(if_tri,"triangles/tri_knots", messages = 0)
+            self.TriKnots = h5_read(if_tri,"triangles/tri_knots", messages = 0)   # Nodes of all EIRENE triangles
             self.TriKnots = self.TriKnots - 1 										#Matlab/Fortan to python indexes
             self.R		 = h5_read(if_tri,"knots/R", messages = 0)*0.01
             self.Z		 = h5_read(if_tri,"knots/Z", messages = 0)*0.01
@@ -78,8 +79,10 @@ class SOLEDGEcase():
     
     def plot_2d(
         self,
-        param, 
+        fig,
         ax,
+        param = None, 
+        data = None,
         norm = None,
         vmin = None, 
         vmax = None, 
@@ -87,6 +90,7 @@ class SOLEDGEcase():
         separatrix = True, 
         sep_width = 2,
         cmap = "Spectral_r",
+        cbar = False,
         verbose = False):
         """
         Plots a 2D tripcolor plot on tri grid
@@ -104,9 +108,15 @@ class SOLEDGEcase():
         - cmap = str: Matplotlib colormap choice
         """
         
+        # if param == None and data == []:
+        #     raise Exception("Must provide param or data")
+        # if param != None and data.isinstance(np.array):
+        #     raise Exception("Must provide param or data")
         
-        iPlasma, iPar = self.get_param_indices(param, triangles = True)
-        data = self.Plasmas[iPlasma][0].Triangles.Values[iPar]
+        if param != None:
+            iPlasma, iPar = self.get_param_indices(param, triangles = True)
+            data = self.Plasmas[iPlasma][0].Triangles.Values[iPar]
+        
         
         # Calculate range if not provided
         vmin = min(data) if vmin is None else vmin
@@ -118,7 +128,7 @@ class SOLEDGEcase():
             norm = create_norm(logscale, norm, vmin, vmax)
             
         
-        ax.tripcolor(self.TripTriang, data, norm = norm, cmap = cmap,  linewidth=0)
+        tp = ax.tripcolor(self.TripTriang, data, norm = norm, cmap = cmap,  linewidth=0)
         ax.set_aspect("equal")
         if separatrix is True:
             lw = sep_width
@@ -127,8 +137,21 @@ class SOLEDGEcase():
             ax.plot(lhs["R"], lhs["Z"], lw = lw, c = c)
             ax.plot(rhs["R"], rhs["Z"], lw = lw, c = c)
             
-        self.params = self.Plasmas[iPlasma][0].Triangles.VNames + self.Plasmas[iPlasma][1].Triangles.VNames
+        if cbar is True:
+            fig.colorbar(tp, norm=norm)
+
             
+        # self.params = self.Plasmas[iPlasma][0].Triangles.VNames + self.Plasmas[iPlasma][1].Triangles.VNames
+          
+    def _get_2d_on_tri(self,param):
+        """
+        Return plottable 2D data on triangle mesh
+        """
+        
+        iPlasma, iPar = self.get_param_indices(param, triangles = True)
+        data = self.Plasmas[iPlasma][0].Triangles.Values[iPar]
+        
+        return data
             
     def get_1d_radial_data(
         self, 
@@ -548,7 +571,7 @@ class SOLEDGEcase():
         #     fluxN.append(FluxiN[i+1][zOrder,4])
         # for i in range(len(fluxN)):
         #     fluxN[i]=fluxN[i]*1e-22
-            
+        
         ### Get the total integrals
         if verbose is True:
             print(f"\n### TOTAL WALL INTEGRALS------------")
@@ -561,8 +584,159 @@ class SOLEDGEcase():
             for col in df.columns:
                 if "F_" in col:
                     print(f"{col}: ---- {(df[col]*df['Area']).sum():.3e} [s-1]")
-                
         
+        return df
+    
+    
+    def get_wall_ntmpi(self):
+        """
+        Get density, temperature, pressure of plasma and neutrals on wall
+        return df
+        """
+        
+        ## --------------- Get N, T, M, P on wall
+        Eirene = self.Eirene
+        RefPar = self.RefPar
+        ions = self.ions
+        
+        # EIRENE results are here on the full tri mesh
+        eirene_neutrals = h5py.File(os.path.join(self.path, "Results", "eirene_neutrals"), 'r')
+        
+        # Get wall ids. iWallKnots are the indices for the plasma parameters interpolated to tri
+        # iWallTriangles are the indices for EIRENE parameters on full tri grid.
+        ZeroTriangle, ZeroSide, Ri, Zi, RWallTriangles, ZWallTriangles, iWallTriangles, iWallSide, iWallKnots  = \
+				get_wall_triangle(Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1, no_triangles=0)
+
+        RWallTriangles = np.append(RWallTriangles, RWallTriangles[0])
+        ZWallTriangles = np.append(ZWallTriangles, ZWallTriangles[0])
+        iWallKnots	   = np.append(iWallKnots, iWallKnots[0])
+        # iWallTriangles	   = np.append(iWallTriangles, iWallTriangles[0])
+
+        WalldL  	   = np.sqrt((RWallTriangles[1:]-RWallTriangles[:-1])**2 + (ZWallTriangles[1:]-ZWallTriangles[:-1])**2)
+        DistKnots	   = np.cumsum(np.append(0., WalldL))
+        DistTriangles  = 0.5*(DistKnots[:-1]+DistKnots[1:])
+            
+        evolution = 0
+
+        if(evolution == 0):
+            base_plasma_name = os.path.join(self.path, "Results") 
+        else:
+            base_plasma_name = os.path.join(self.path, "/Evolution/{:d}_".format(evolution))
+
+        if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_0"), "r")
+        Te			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+        if_plasma.close()
+
+        if_plasma	= h5py.File(os.path.join(base_plasma_name,"plasma_1"), "r")
+        Ti			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+        if_plasma.close()
+
+        Te 	= Te[iWallKnots]
+        Ti 	= Ti[iWallKnots]
+        
+        for iPlasma in range(len(ions)):
+            try:
+                if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_"+str(iPlasma)), "r")
+            except:
+                raise Exception("Cannot read plasma file")
+
+            temperature	= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+            density		= h5_read(if_plasma,"triangles/density")*RefPar.n0
+            velocity	= h5_read(if_plasma,"triangles/velocity")*RefPar.c0
+
+            temperature = temperature[iWallKnots]
+            density 	= density[iWallKnots]
+            velocity 	= velocity[iWallKnots]
+
+            Jsat		= np.abs(1.6022e-19*velocity*density)*1e-3											#eletronic charge
+            M			= velocity/np.sqrt((Te+Ti)/2)*(np.sqrt(RefPar.T0eV)/RefPar.c0)	
+            
+            if(iPlasma > 0):
+                
+                try:
+                    Sn_tri	= h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0
+                    if(Sn_tri.max() - Sn_tri.min() > 0.):
+                        Sn_tri = set_min_positive(Sn_tri)
+                        Sn	   = Sn_tri[iWallTriangles]
+                        Sn	   = 0.5*np.append(np.append(Sn[0]+Sn[-1], Sn[:-1]+Sn[1:]), Sn[0]+Sn[-1])
+                    else: Sn = 0.
+                    Sn_tri = 0
+        #				Sn	= -h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0									#recombination
+                except:
+                    raise Exception("Cannot read Sn")
+                    Sn  = 0.
+
+                try:
+                    Nn = eirene_neutrals["atomic_species"]["dens_1"][:]
+                    Tn = eirene_neutrals["atomic_species"]["T_1"][:]
+                    Nm = eirene_neutrals["molecular_species"]["dens_1"][:]
+                    Tm = eirene_neutrals["molecular_species"]["T_1"][:]
+
+                    Nn = Nn[iWallTriangles]
+                    Nm = Nm[iWallTriangles]
+                    Tn = Tn[iWallTriangles]
+                    Tm = Tm[iWallTriangles]
+
+                    Tn = set_min_positive(Tn)
+                    Tm = set_min_positive(Tm)
+                    Nn	= 0.5*np.append(np.append(Nn[0]+Nn[-1], Nn[:-1]+Nn[1:]), Nn[0]+Nn[-1])*RefPar.n0
+                    Nm	= 0.5*np.append(np.append(Nm[0]+Nm[-1], Nm[:-1]+Nm[1:]), Nm[0]+Nm[-1])*RefPar.n0
+                    Tn	= 0.5*np.append(np.append(Tn[0]+Tn[-1], Tn[:-1]+Tn[1:]), Tn[0]+Tn[-1])
+                    Tm	= 0.5*np.append(np.append(Tm[0]+Tm[-1], Tm[:-1]+Tm[1:]), Tm[0]+Tm[-1])
+
+                    Pn	= (Nn*Tn+Nm*Tm)*1.6e-19
+                    if(Pn.max() - Pn.min() < 0.): Pn = 0.
+                except:
+                    raise Exception("Cannot read neutral data")
+            else:
+                Sn	= 0.; Pn	= 0.
+
+        def do_some_append(x):
+            return x[:-1]
+        
+        df = pd.DataFrame()
+        
+        # TODO resolve the length issue here
+        # print("walldL", len(WalldL))
+        # print("Rtriangles", len(RWallTriangles))
+        # print("Nn", len(Nn))
+        # print("iWallKnots", len(iWallKnots))
+        
+        df["Nn"] = Nn
+        df["Nm"] = Nm
+        df["Tn"] = Tn
+        df["Tm"] = Tm
+        df["Sn"] = Sn
+        df["M"] = M
+        df["Te"] = Te
+        df["Ti"] = Ti
+        df["Ne"] = density
+        
+        df["walldL"] = np.append(WalldL, WalldL[-1])
+        df["L"] = np.cumsum(df["walldL"])
+        # No idea what's happening with the lengths
+        df["R"] = RWallTriangles #do_some_append(RWallTriangles)
+        df["Z"] = ZWallTriangles # do_some_append(ZWallTriangles)
+        df["iWallKnots"] = iWallKnots
+            
+        
+        return df
+    
+    def get_wall_data_on_target(self, df, target):
+        """
+        Align data with Te peaks for each divertor
+        """
+        out = scipy.signal.find_peaks(df["Te"], prominence = 1)
+        peakid = out[0]
+        indices = {
+            "inner_lower":peakid[0],
+            "outer_lower":peakid[1],
+            "outer_upper":peakid[2],
+            "inner_upper":peakid[3]
+        }
+        target = "inner_lower"
+        df["dist"] = df["L"] - df["L"][indices[target]]
+
         return df
     
     def _get_rz_sep(self):
@@ -769,10 +943,6 @@ def indexes(list_strs, str):
 
 
 def create_norm(logscale, norm, vmin, vmax):
-    """
-    Create matplotlib norm based on extents and scale type
-    """
-    
     if logscale:
         if norm is not None:
             raise ValueError(
@@ -788,6 +958,8 @@ def create_norm(logscale, norm, vmin, vmax):
             else:
                 linear_scale = 1.0e-5
             linear_threshold = min(abs(vmin), abs(vmax)) * linear_scale
+            if linear_threshold == 0:
+                linear_threshold = 1e-4 * vmax   # prevents crash on "Linthresh must be positive"
             norm = mpl.colors.SymLogNorm(linear_threshold, vmin=vmin, vmax=vmax)
     elif norm is None:
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
