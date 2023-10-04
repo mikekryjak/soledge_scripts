@@ -50,7 +50,7 @@ from matplotlib.backends.backend_pdf	import PdfPages
 
 from routines.h5_routines				import h5_read
 from routines.intersect_contour			import intersect_2contours
-from routines.utils_walls				import get_in_out_walls, plot2d_walls
+from routines.utils_walls				import get_in_out_walls, plot2d_walls, get_dmax_points_walls
 from routines.set_profile_from_filedata	import set_profile_from_filedata
 from routines.globals					import DEBUG, KB, BALLOONING_NAMES
 
@@ -72,7 +72,8 @@ from files.load_refpar_file				import load_refpar_file
 #==============================================================================
 
 def plot1d_pol_mesh(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., d_from_sep=0.01, l_pol=0, log_scale=0, rho_scale=0, plot_fluxes=0, one_plot=0, save="none"):
-
+	d_from_sep = 0.001
+	l_pol=1
 	matplotlib_ver = matplotlib.__version__
 	
 	print("plot1d_pol_mesh")
@@ -117,7 +118,7 @@ def plot1d_pol_mesh(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., d_
 		Rcore, Zcore, CoreMegazone = get_rz_core_sep(Config, core_and_sep = False)
 		rz0_line = [0.5*(Rcore.min() + Rcore.max()), 0.]
 
-	rMax		= 6*get_dmax_points_walls(Config, rz0_line[0], z0_line[1], plasma_wall=True, eirene_wall=False, extra_wall=False)
+	rMax		= 6*get_dmax_points_walls(Config, rz0_line[0], rz0_line[1], plasma_wall=True, eirene_wall=False, extra_wall=False)
 	theta_line	= theta_line*np.pi/180.
 	RZLine		= np.array([[rz0_line[0],						  rz0_line[1]], \
 							[rz0_line[0]+rMax*np.cos(theta_line), rz0_line[1]+rMax*np.sin(theta_line)]])

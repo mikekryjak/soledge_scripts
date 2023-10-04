@@ -54,7 +54,8 @@ from routines.globals					import DEBUG, KB
 #=========================================================
 
 def plot2d_fluxes_mesh(path="", log_scale=0, d_only=0, one_plot=0, no_shade=0, no_mask=0, no_samexy=0, save="none"):
-
+	no_shade =1
+	no_mask =1
 	print("plot2d_fluxes_mesh")
 
 #	Read references data

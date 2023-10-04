@@ -33,6 +33,15 @@ if __name__ == "__main__":
 	save		= cli_get_value("-save",			sys.argv, "none")
 	log_scale	= cli_present("-log_scale",		sys.argv)
 	one_plot	= cli_present("-one_plot",		sys.argv)
+ 
+ 
+	##########################
+	# SETTINGS OVERRIDES... CLI CAPTURE BROKEN
+	##########################
+	# save = "csv"
+	save = "none"
+
+ 
 	plot1d_wall_ntmpi(path=path, evolution=evolution, rz0_line = rz0_line, theta_line=theta_line, exp=exp, shot=shot, time=time, log_scale=log_scale, one_plot=one_plot, save=save)
 	exit()
 
@@ -66,6 +75,7 @@ def plot1d_wall_ntmpi(path="./", evolution=0, rz0_line = [0.,0.], theta_line=0.,
 	print("plot1d_wall_ntmpi")
 
 	Eirene = load_eirene_triangles(path+"triangles.h5")
+	eirene_neutrals = h5py.File(os.path.join(path, "Results", "eirene_neutrals"), 'r')
 
 	i_plot_file = 0
 
@@ -104,6 +114,8 @@ def plot1d_wall_ntmpi(path="./", evolution=0, rz0_line = [0.,0.], theta_line=0.,
 	if_plasma	= h5py.File(base_plasma_name+"plasma_1", "r")
 	Ti			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
 	if_plasma.close()
+	print(["*"]*12)	
+	print(iWallKnots)
 
 	Te 	= Te[iWallKnots]
 	Ti 	= Ti[iWallKnots]
@@ -150,10 +162,10 @@ def plot1d_wall_ntmpi(path="./", evolution=0, rz0_line = [0.,0.], theta_line=0.,
 				Sn  = 0.
 
 			try:
-				Nn	= h5_read(if_plasma,"triangles/Nn")
-				Nm	= h5_read(if_plasma,"triangles/Nm")
-				Tn	= h5_read(if_plasma,"triangles/Tn")
-				Tm	= h5_read(if_plasma,"triangles/Tm")
+				Nn = eirene_neutrals["atomic_species"]["dens_1"][:]
+				Tn = eirene_neutrals["atomic_species"]["T_1"][:]
+				Nm = eirene_neutrals["molecular_species"]["dens_1"][:]
+				Tm = eirene_neutrals["molecular_species"]["T_1"][:]
 				
 				Nn = Nn[iWallTriangles]
 				Nm = Nm[iWallTriangles]

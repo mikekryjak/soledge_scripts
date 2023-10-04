@@ -168,7 +168,7 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 		fluxN[i]=fluxN[i]*1e-22
 
 	try:
-		details = False
+		details = True
 		if(details):
 			EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_details_1"), dtype='f8', comments="%")
 	#			[0:dlWall, 
@@ -180,6 +180,11 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 			FluxEi		= EFluxF[zOrder,2]*1.e-6
 			FluxETot	= EFluxF[zOrder,3]*1.e-6
 			FluxERadTot	= EFluxF[zOrder,5]*1.e-6
+			FluxEa_rad = EFluxF[zOrder,5]*1.e-6
+			FluxEa_inc = EFluxF[zOrder,4]*1.e-6
+			FluxEa_rec_wall = EFluxF[zOrder,7]*1.e-6
+			FluxEa_rec_rad = EFluxF[zOrder,6]*1.e-6
+			FluxEm_inc = EFluxF[zOrder,8]*1.e-6
 
 		else:
 			EFluxF	 = np.loadtxt(os.path.join(path, "soledge2D.energy_fluxes_1"), dtype='f8', comments="%")
@@ -206,6 +211,12 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 	TFluxETot		= 2.*np.pi*np.sum(FluxETot*WalldL*WallR)
 	TFluxERadTot	= 2.*np.pi*np.sum(FluxERadTot*WalldL*WallR)
 	TFluxETotei		= 2.*np.pi*np.sum(FluxETotei*WalldL*WallR)
+ 
+	FluxEa_rad = 2.*np.pi*np.sum(FluxEa_rad*WalldL*WallR)
+	FluxEa_inc = 2.*np.pi*np.sum(FluxEa_inc*WalldL*WallR)
+	FluxEa_rec_wall = 2.*np.pi*np.sum(FluxEa_rec_wall*WalldL*WallR)
+	FluxEa_rec_rad = 2.*np.pi*np.sum(FluxEa_rec_rad*WalldL*WallR)
+	FluxEm_inc = 2.*np.pi*np.sum(FluxEm_inc*WalldL*WallR)
 
 	TaFlux = 2.*np.pi*np.sum(fluxN[0]*WalldL*WallR)
 	TmFlux = 2.*np.pi*np.sum(fluxN[1]*WalldL*WallR)
@@ -229,6 +240,14 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 	print("TFluxi        =",TFluxi*1e22)			#D+ total aion flux to the wall
 	print("TfluxD         =",TaFlux*1e22)			#D total atom flux to the wall
 	print("TfluxD_2       =",TmFlux*1e22)			#D2 total molecular flux to the wall
+ 
+	print(f"FluxEa_rad = {FluxEa_rad}")
+	print(f"FluxEa_inc = {FluxEa_inc}")
+	print(f"FluxEa_rec_wall = {FluxEa_rec_wall}")
+	print(f"FluxEa_rec_rad = {FluxEa_rec_rad}")
+	print(f"FluxEm_inc = {FluxEm_inc}")
+	# print(f"Total incident heat flux: {}")
+ 
 	if (len(FluxiN)>2):
 		print("Tflux_i        =",TnFluxi*1e22)				#Impurity total atom flux from the wall
 		print("C_div         =",TnFluxi/2/TmFlux*100,"%")
@@ -333,7 +352,7 @@ def plot1d_wall_fluxes(path="./", rz0_line = [0.,0.], theta_line=0., log_scale=0
 	df["pflux_i"] = Fluxi*1e22   # Ion particle flux [s-1m-2]
 	df["hflux_tot"] = FluxETot   # Total energy flux [MWm-2]
 	df["hflux_totrad"] = FluxERadTot   # Total radiation flux [MWm-2]
-	df["hflux_par_tot"] = TFluxETotei   # Incident e+i heat flux [MWm-2] ??? doesn't add up to the above two
+	df["hflux_par_ei"] = TFluxETotei   # Incident e+i heat flux [MWm-2] ??? doesn't add up to the above two
 	df["hflux_par_e"] = FluxEe    # Incident e heat flux [MWm-2]
 	df["hflux_par_i"] = FluxEi    # Incident i heat flux [MWm-2]
 	df["pflux_a"] = fluxN[0]*1e22   # Neutral atom flux   [s-1m-2]

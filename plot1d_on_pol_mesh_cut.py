@@ -87,7 +87,7 @@ from files.load_refpar_file				import load_refpar_file
 # This routine plots ne/ni and Te/Ti soledge mesh inpolidal direction
 #==============================================================================
 
-def plot1d_on_pol_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line=5., d_from_sep=0.01, l_pol=0, log_scale=0, d_only=0, no_samex=0, no_zero=0, path_label=[], no_labels=0, diff=0, extra_walls=0, one_plot=0, save="none"):
+def plot1d_on_pol_mesh_cut(path=[], evolution=[], rz0_line = [], theta_line=0, d_from_sep=0.01, l_pol=0, log_scale=0, d_only=0, no_samex=0, no_zero=0, path_label=[], no_labels=0, diff=0, extra_walls=0, one_plot=0, save="none"):
 
 	matplotlib_ver = matplotlib.__version__
 	

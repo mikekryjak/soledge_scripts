@@ -30,7 +30,6 @@ class SOLEDGEcase():
         with HiddenPrints() if verbose is False else contextlib.nullcontext():  # Suppress all prints
             
             self.path = path 
-            self.verbose = verbose
             
             #	Read mesh
             self.Config = load_soledge_mesh_file(os.path.join(path,"mesh.h5"))
@@ -156,7 +155,7 @@ class SOLEDGEcase():
             
     def get_1d_radial_data(
         self, 
-        params, 
+        param, 
         rz0_line = [], 
         theta_line = 0, 
         verbose = False,
@@ -228,16 +227,15 @@ class SOLEDGEcase():
             dist -= dsep
             xSep = 0.
             
+            iPlasma, iPar = self.get_param_indices(param)
+            data = get_plasma_parameter_on_mesh(self.Plasmas[iPlasma], iPar, IntCEll)
+            
             df = pd.DataFrame()
             
             df["dist"] = dist
             df["R"] = IntRZ[:,0]
             df["Z"] = IntRZ[:,1]
-            
-            for param in params:
-                iPlasma, iPar = self.get_param_indices(param)
-                data = get_plasma_parameter_on_mesh(self.Plasmas[iPlasma], iPar, IntCEll)
-                df[param] = data
+            df[param] = data
             
             if debug_line is True:
                 fig, ax = plt.subplots()
@@ -595,131 +593,131 @@ class SOLEDGEcase():
         Get density, temperature, pressure of plasma and neutrals on wall
         return df
         """
-        with HiddenPrints() if self.verbose is False else contextlib.nullcontext():  # Suppress all prints
-            ## --------------- Get N, T, M, P on wall
-            Eirene = self.Eirene
-            RefPar = self.RefPar
-            ions = self.ions
-            
-            # EIRENE results are here on the full tri mesh
-            eirene_neutrals = h5py.File(os.path.join(self.path, "Results", "eirene_neutrals"), 'r')
-            
-            # Get wall ids. iWallKnots are the indices for the plasma parameters interpolated to tri
-            # iWallTriangles are the indices for EIRENE parameters on full tri grid.
-            ZeroTriangle, ZeroSide, Ri, Zi, RWallTriangles, ZWallTriangles, iWallTriangles, iWallSide, iWallKnots  = \
-                    get_wall_triangle(Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1, no_triangles=0)
+        
+        ## --------------- Get N, T, M, P on wall
+        Eirene = self.Eirene
+        RefPar = self.RefPar
+        ions = self.ions
+        
+        # EIRENE results are here on the full tri mesh
+        eirene_neutrals = h5py.File(os.path.join(self.path, "Results", "eirene_neutrals"), 'r')
+        
+        # Get wall ids. iWallKnots are the indices for the plasma parameters interpolated to tri
+        # iWallTriangles are the indices for EIRENE parameters on full tri grid.
+        ZeroTriangle, ZeroSide, Ri, Zi, RWallTriangles, ZWallTriangles, iWallTriangles, iWallSide, iWallKnots  = \
+				get_wall_triangle(Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1, no_triangles=0)
 
-            RWallTriangles = np.append(RWallTriangles, RWallTriangles[0])
-            ZWallTriangles = np.append(ZWallTriangles, ZWallTriangles[0])
-            iWallKnots	   = np.append(iWallKnots, iWallKnots[0])
-            # iWallTriangles	   = np.append(iWallTriangles, iWallTriangles[0])
+        RWallTriangles = np.append(RWallTriangles, RWallTriangles[0])
+        ZWallTriangles = np.append(ZWallTriangles, ZWallTriangles[0])
+        iWallKnots	   = np.append(iWallKnots, iWallKnots[0])
+        # iWallTriangles	   = np.append(iWallTriangles, iWallTriangles[0])
 
-            WalldL  	   = np.sqrt((RWallTriangles[1:]-RWallTriangles[:-1])**2 + (ZWallTriangles[1:]-ZWallTriangles[:-1])**2)
-            DistKnots	   = np.cumsum(np.append(0., WalldL))
-            DistTriangles  = 0.5*(DistKnots[:-1]+DistKnots[1:])
+        WalldL  	   = np.sqrt((RWallTriangles[1:]-RWallTriangles[:-1])**2 + (ZWallTriangles[1:]-ZWallTriangles[:-1])**2)
+        DistKnots	   = np.cumsum(np.append(0., WalldL))
+        DistTriangles  = 0.5*(DistKnots[:-1]+DistKnots[1:])
+            
+        evolution = 0
+
+        if(evolution == 0):
+            base_plasma_name = os.path.join(self.path, "Results") 
+        else:
+            base_plasma_name = os.path.join(self.path, "/Evolution/{:d}_".format(evolution))
+
+        if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_0"), "r")
+        Te			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+        if_plasma.close()
+
+        if_plasma	= h5py.File(os.path.join(base_plasma_name,"plasma_1"), "r")
+        Ti			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+        if_plasma.close()
+
+        Te 	= Te[iWallKnots]
+        Ti 	= Ti[iWallKnots]
+        
+        for iPlasma in range(len(ions)):
+            try:
+                if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_"+str(iPlasma)), "r")
+            except:
+                raise Exception("Cannot read plasma file")
+
+            temperature	= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
+            density		= h5_read(if_plasma,"triangles/density")*RefPar.n0
+            velocity	= h5_read(if_plasma,"triangles/velocity")*RefPar.c0
+
+            temperature = temperature[iWallKnots]
+            density 	= density[iWallKnots]
+            velocity 	= velocity[iWallKnots]
+
+            Jsat		= np.abs(1.6022e-19*velocity*density)*1e-3											#eletronic charge
+            M			= velocity/np.sqrt((Te+Ti)/2)*(np.sqrt(RefPar.T0eV)/RefPar.c0)	
+            
+            if(iPlasma > 0):
                 
-            evolution = 0
-
-            if(evolution == 0):
-                base_plasma_name = os.path.join(self.path, "Results") 
-            else:
-                base_plasma_name = os.path.join(self.path, "/Evolution/{:d}_".format(evolution))
-
-            if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_0"), "r")
-            Te			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
-            if_plasma.close()
-
-            if_plasma	= h5py.File(os.path.join(base_plasma_name,"plasma_1"), "r")
-            Ti			= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
-            if_plasma.close()
-
-            Te 	= Te[iWallKnots]
-            Ti 	= Ti[iWallKnots]
-            
-            for iPlasma in range(len(ions)):
                 try:
-                    if_plasma	= h5py.File(os.path.join(base_plasma_name, "plasma_"+str(iPlasma)), "r")
+                    Sn_tri	= h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0
+                    if(Sn_tri.max() - Sn_tri.min() > 0.):
+                        Sn_tri = set_min_positive(Sn_tri)
+                        Sn	   = Sn_tri[iWallTriangles]
+                        Sn	   = 0.5*np.append(np.append(Sn[0]+Sn[-1], Sn[:-1]+Sn[1:]), Sn[0]+Sn[-1])
+                    else: Sn = 0.
+                    Sn_tri = 0
+        #				Sn	= -h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0									#recombination
                 except:
-                    raise Exception("Cannot read plasma file")
+                    raise Exception("Cannot read Sn")
+                    Sn  = 0.
 
-                temperature	= h5_read(if_plasma,"triangles/temperature")*RefPar.T0eV
-                density		= h5_read(if_plasma,"triangles/density")*RefPar.n0
-                velocity	= h5_read(if_plasma,"triangles/velocity")*RefPar.c0
+                try:
+                    Nn = eirene_neutrals["atomic_species"]["dens_1"][:]
+                    Tn = eirene_neutrals["atomic_species"]["T_1"][:]
+                    Nm = eirene_neutrals["molecular_species"]["dens_1"][:]
+                    Tm = eirene_neutrals["molecular_species"]["T_1"][:]
 
-                temperature = temperature[iWallKnots]
-                density 	= density[iWallKnots]
-                velocity 	= velocity[iWallKnots]
+                    Nn = Nn[iWallTriangles]
+                    Nm = Nm[iWallTriangles]
+                    Tn = Tn[iWallTriangles]
+                    Tm = Tm[iWallTriangles]
 
-                Jsat		= np.abs(1.6022e-19*velocity*density)*1e-3											#eletronic charge
-                M			= velocity/np.sqrt((Te+Ti)/2)*(np.sqrt(RefPar.T0eV)/RefPar.c0)	
-                
-                if(iPlasma > 0):
-                    
-                    try:
-                        Sn_tri	= h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0
-                        if(Sn_tri.max() - Sn_tri.min() > 0.):
-                            Sn_tri = set_min_positive(Sn_tri)
-                            Sn	   = Sn_tri[iWallTriangles]
-                            Sn	   = 0.5*np.append(np.append(Sn[0]+Sn[-1], Sn[:-1]+Sn[1:]), Sn[0]+Sn[-1])
-                        else: Sn = 0.
-                        Sn_tri = 0
-            #				Sn	= -h5_read(if_plasma,"triangles/Sn")*RefPar.n0/RefPar.tau0									#recombination
-                    except:
-                        raise Exception("Cannot read Sn")
-                        Sn  = 0.
+                    Tn = set_min_positive(Tn)
+                    Tm = set_min_positive(Tm)
+                    Nn	= 0.5*np.append(np.append(Nn[0]+Nn[-1], Nn[:-1]+Nn[1:]), Nn[0]+Nn[-1])*RefPar.n0
+                    Nm	= 0.5*np.append(np.append(Nm[0]+Nm[-1], Nm[:-1]+Nm[1:]), Nm[0]+Nm[-1])*RefPar.n0
+                    Tn	= 0.5*np.append(np.append(Tn[0]+Tn[-1], Tn[:-1]+Tn[1:]), Tn[0]+Tn[-1])
+                    Tm	= 0.5*np.append(np.append(Tm[0]+Tm[-1], Tm[:-1]+Tm[1:]), Tm[0]+Tm[-1])
 
-                    try:
-                        Nn = eirene_neutrals["atomic_species"]["dens_1"][:]
-                        Tn = eirene_neutrals["atomic_species"]["T_1"][:]
-                        Nm = eirene_neutrals["molecular_species"]["dens_1"][:]
-                        Tm = eirene_neutrals["molecular_species"]["T_1"][:]
+                    Pn	= (Nn*Tn+Nm*Tm)*1.6e-19
+                    if(Pn.max() - Pn.min() < 0.): Pn = 0.
+                except:
+                    raise Exception("Cannot read neutral data")
+            else:
+                Sn	= 0.; Pn	= 0.
 
-                        Nn = Nn[iWallTriangles]
-                        Nm = Nm[iWallTriangles]
-                        Tn = Tn[iWallTriangles]
-                        Tm = Tm[iWallTriangles]
-
-                        Tn = set_min_positive(Tn)
-                        Tm = set_min_positive(Tm)
-                        Nn	= 0.5*np.append(np.append(Nn[0]+Nn[-1], Nn[:-1]+Nn[1:]), Nn[0]+Nn[-1])*RefPar.n0
-                        Nm	= 0.5*np.append(np.append(Nm[0]+Nm[-1], Nm[:-1]+Nm[1:]), Nm[0]+Nm[-1])*RefPar.n0
-                        Tn	= 0.5*np.append(np.append(Tn[0]+Tn[-1], Tn[:-1]+Tn[1:]), Tn[0]+Tn[-1])
-                        Tm	= 0.5*np.append(np.append(Tm[0]+Tm[-1], Tm[:-1]+Tm[1:]), Tm[0]+Tm[-1])
-
-                        Pn	= (Nn*Tn+Nm*Tm)*1.6e-19
-                        if(Pn.max() - Pn.min() < 0.): Pn = 0.
-                    except:
-                        raise Exception("Cannot read neutral data")
-                else:
-                    Sn	= 0.; Pn	= 0.
-
-            def do_some_append(x):
-                return x[:-1]
-            
-            df = pd.DataFrame()
-            
-            # TODO resolve the length issue here
-            # print("walldL", len(WalldL))
-            # print("Rtriangles", len(RWallTriangles))
-            # print("Nn", len(Nn))
-            # print("iWallKnots", len(iWallKnots))
-            
-            df["Nn"] = Nn
-            df["Nm"] = Nm
-            df["Tn"] = Tn
-            df["Tm"] = Tm
-            df["Sn"] = Sn
-            df["M"] = M
-            df["Te"] = Te
-            df["Ti"] = Ti
-            df["Ne"] = density
-            
-            df["walldL"] = np.append(WalldL, WalldL[-1])
-            df["L"] = np.cumsum(df["walldL"])
-            # No idea what's happening with the lengths
-            df["R"] = RWallTriangles #do_some_append(RWallTriangles)
-            df["Z"] = ZWallTriangles # do_some_append(ZWallTriangles)
-            df["iWallKnots"] = iWallKnots
+        def do_some_append(x):
+            return x[:-1]
+        
+        df = pd.DataFrame()
+        
+        # TODO resolve the length issue here
+        # print("walldL", len(WalldL))
+        # print("Rtriangles", len(RWallTriangles))
+        # print("Nn", len(Nn))
+        # print("iWallKnots", len(iWallKnots))
+        
+        df["Nn"] = Nn
+        df["Nm"] = Nm
+        df["Tn"] = Tn
+        df["Tm"] = Tm
+        df["Sn"] = Sn
+        df["M"] = M
+        df["Te"] = Te
+        df["Ti"] = Ti
+        df["Ne"] = density
+        
+        df["walldL"] = np.append(WalldL, WalldL[-1])
+        df["L"] = np.cumsum(df["walldL"])
+        # No idea what's happening with the lengths
+        df["R"] = RWallTriangles #do_some_append(RWallTriangles)
+        df["Z"] = ZWallTriangles # do_some_append(ZWallTriangles)
+        df["iWallKnots"] = iWallKnots
             
         
         return df

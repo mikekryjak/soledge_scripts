@@ -68,10 +68,10 @@ if __name__ == "__main__":
 	##########################
 	# SETTINGS OVERRIDES... CLI CAPTURE BROKEN
 	##########################
-	# save = "csv"
-	save = "none"
+	save = "csv"
+	# save = "none"
 	theta_line = 180
-	neutral_override = False
+	neutral_override = True
 	plot1d_on_rad_mesh_cut(path=path, evolution=evolution, rz0_line=rz0_line, theta_line=theta_line, mod_file=mod_file, exp_files=exp_files, shot=shot, tstart=tstart, tend=tend, path_label=path_label, no_labels=no_labels, d_only=d_only, all_ions=all_ions, log_scale=log_scale, rho_scale=rho_scale, psi_scale=psi_scale, print_lambda=print_lambda, diff=diff, extra_walls=extra_walls, one_plot=one_plot, save=save, neutral_override = neutral_override)
 	exit()
 
@@ -201,7 +201,7 @@ def plot1d_on_rad_mesh_cut(path=[], evolution=[], rz0_line = [2.,0.], theta_line
 
 #	Find mesh along line
 	
- 	if(len(rz0_line) == 0):	
+	if(len(rz0_line) == 0):	
 		Rcore, Zcore, CoreMegazone = get_rz_core_sep(Config, core_and_sep = False)
 		rz0_line = [0.5*(Rcore.min() + Rcore.max()), Zcore[np.argmax(Rcore)]]
 

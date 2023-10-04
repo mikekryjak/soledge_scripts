@@ -170,8 +170,9 @@ def load_soledge_mesh_file_V0(MeshFile):
 			Mesher.Frontiers_OK	= False
 			if(DEBUG > 1): print("\tload_soledge_mesh_file: Frontiers = NO")
 	else:	Frontiers	= []
-
+	print(Mesher.Frontiers_OK)
 	if(Mesher.Frontiers_OK):
+		
 		try:
 			mesher_zones = "/mesher/Zones"
 			nZones = h5_read(if_mesh, mesher_zones +"/nZones", keep_array=False)
