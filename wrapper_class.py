@@ -92,6 +92,10 @@ class SOLEDGEcase():
         sep_width = 2,
         cmap = "Spectral_r",
         cbar = False,
+        cbar_label = "",
+        linewidth = 0,
+        linecolor = "k",
+        grid_only = False,
         verbose = False):
         """
         Plots a 2D tripcolor plot on tri grid
@@ -127,9 +131,10 @@ class SOLEDGEcase():
         
         if norm is None:
             norm = create_norm(logscale, norm, vmin, vmax)
-            
+        if grid_only is True:
+            cmap = mpl.colors.ListedColormap(["white"])
         
-        tp = ax.tripcolor(self.TripTriang, data, norm = norm, cmap = cmap,  linewidth=0)
+        tp = ax.tripcolor(self.TripTriang, data, norm = norm, cmap = cmap,  linewidth=linewidth, edgecolors = linecolor)
         ax.set_aspect("equal")
         if separatrix is True:
             lw = sep_width
@@ -139,7 +144,7 @@ class SOLEDGEcase():
             ax.plot(rhs["R"], rhs["Z"], lw = lw, c = c)
             
         if cbar is True:
-            fig.colorbar(tp, norm=norm)
+            fig.colorbar(tp, norm=norm, label = cbar_label)
 
             
         # self.params = self.Plasmas[iPlasma][0].Triangles.VNames + self.Plasmas[iPlasma][1].Triangles.VNames
@@ -252,11 +257,11 @@ class SOLEDGEcase():
     
     def get_1d_poloidal_data(
         self, 
-        param, 
+        params, 
         rz0_line = [], 
         theta_line = 0, 
         parallel_length = False,
-        d_from_sep = 0.01,
+        d_from_sep = 0.0001,
         verbose = False):
         
         """
@@ -413,10 +418,15 @@ class SOLEDGEcase():
             
             
             # Grab the data, pack in dataframe and return
-            iPlasma, iPar = self.get_param_indices(param)
-            data = get_plasma_parameter_on_pol(self.Plasmas[iPlasma], iPar, ix, iZones, iThWest, iThEast, nThetaPts)
-            
             df = pd.DataFrame()
+            for param in params:
+                iPlasma, iPar = self.get_param_indices(param)
+                data = get_plasma_parameter_on_pol(self.Plasmas[iPlasma], iPar, ix, iZones, iThWest, iThEast, nThetaPts)
+                df[param] = data
+            
+           
+            
+            
             df["dist"] = Lpara
             df["R"] = Rpol
             df["Z"] = Zpol
@@ -449,7 +459,13 @@ class SOLEDGEcase():
             
         return iPlasma, iPar
     
-    def get_wall_fluxes(self, verbose = True):
+    def get_wall_fluxes(self, verbose = True, split = True, grid = "tight"):
+        """
+        Return wall particle and heat fluxes for the entire wall. If split = true,
+        will split the fluxes between  the walls, PFR and targets. This relies 
+        on hardcoded grid indices and is only implemented for the "tight" grid right now.
+        Verbose will give you a print of the results as well as a debug plot showing the regions.
+        """
         
         ### Get wall coordinates and lengths
         ZeroTriangle, ZeroSide, Ri, Zi = get_wall_triangle(self.Eirene, rz0_line=[0,0], theta_line=0, no_plot=1, no_print=1)
@@ -587,7 +603,51 @@ class SOLEDGEcase():
                 if "F_" in col:
                     print(f"{col}: ---- {(df[col]*df['Area']).sum():.3e} [s-1]")
         
-        return df
+        wfluxes_all = df.copy()
+                    
+        if split is True:
+            if grid != "tight": raise Exception(f"Grid type {grid} not implemented yet")
+            
+            wfluxes = dict()
+            df = wfluxes_all.copy()
+            wfluxes["inner_lower_target"] = df.iloc[slice(22,44),:]
+            wfluxes["lower_pfr"] = df.iloc[slice(44,74),:]
+            wfluxes["outer_lower_target"] = df.iloc[slice(74,97),:]
+            wfluxes["outer_wall"] = df.iloc[slice(97,156),:]
+            wfluxes["outer_upper_target"] = df.iloc[slice(156,176),:]
+            wfluxes["upper_pfr"] = df.iloc[slice(176,209),:]
+            wfluxes["inner_upper_target"] = df.iloc[slice(209,231),:]
+            wfluxes["inner_wall"] = df.iloc[np.r_[slice(0,22), slice(231,253)],:]
+            
+            if verbose is True:
+                fig, ax = plt.subplots(dpi = 170)
+
+                for region in wfluxes.keys():
+
+                    ax.plot(df["R"], df["Z"], c = "k", alpha = 1, lw = 0, marker = "o", markersize = 2, markeredgewidth=0.1, markerfacecolor="None")
+                    if region != "wall":
+                        ax.plot(wfluxes[region]["R"], wfluxes[region]["Z"],  alpha = 0.5, lw = 0,  label = region, markersize = 4, marker = "o")
+                        
+                # Plot duplicates if any
+                allregions = pd.concat(wfluxes.values())
+                dupl = allregions[allregions.duplicated(subset="R")]
+                if len(dupl) > 0:
+                    ax.scatter(dupl["R"], dupl["Z"], c = "r", edgecolors="yellow", s = 50, label = "DUPLICATES", zorder = 200)
+                else:
+                    print("No duplicates found")
+                    
+                ax.set_aspect("equal")
+                fig.legend(loc="upper left", bbox_to_anchor=(0.75, 0.7))
+                ax.set_xlabel("R [m]")
+                ax.set_ylabel("Z [m]")
+                ax.set_ylim(-0.9, 0.9)
+                
+            # Return wall fluxes split by region
+            return wfluxes
+
+        else:
+            # Return all wall fluxes
+            return df
     
     
     def get_wall_ntmpi(self):
