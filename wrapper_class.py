@@ -1,6 +1,7 @@
 from files.load_soledge_mesh_file				import load_soledge_mesh_file
 from files.load_plasma_files						import load_plasma_files
 from files.load_ions_list								import load_ions_list
+from files.load_fluxes_files			import load_fluxes_files
 from files.load_refpar_file				import load_refpar_file
 from files.load_eirene_triangles					import load_eirene_triangles
 from mesh.get_rz_core_sep						import get_rz_core_sep
@@ -10,6 +11,7 @@ from mesh.compute_mesh_intersections	import compute_mesh_intersections
 from routines.intersect_contour				import intersect_2contours
 from routines.utils_walls							import get_in_out_walls, plot2d_walls, get_dmax_points_walls
 from routines.h5_routines							import h5_read
+from routines.globals					import DEBUG, KB
 from eirene.get_wall_triangle					import get_wall_triangle
 from math													import sqrt, exp
 import numpy											as np
@@ -96,7 +98,8 @@ class SOLEDGEcase():
         linewidth = 0,
         linecolor = "k",
         grid_only = False,
-        verbose = False):
+        verbose = False,
+        alpha = 1):
         """
         Plots a 2D tripcolor plot on tri grid
         Tri grid is useful because it contains the actual wall unlike the hex grid
@@ -134,7 +137,10 @@ class SOLEDGEcase():
         if grid_only is True:
             cmap = mpl.colors.ListedColormap(["white"])
         
-        tp = ax.tripcolor(self.TripTriang, data, norm = norm, cmap = cmap,  linewidth=linewidth, edgecolors = linecolor)
+        tp = ax.tripcolor(self.TripTriang, 
+                          data, norm = norm, cmap = cmap,  
+                          linewidth=linewidth, edgecolors = linecolor,
+                          alpha = alpha)
         ax.set_aspect("equal")
         if separatrix is True:
             lw = sep_width
@@ -239,10 +245,25 @@ class SOLEDGEcase():
             df["R"] = IntRZ[:,0]
             df["Z"] = IntRZ[:,1]
             
+            soledge_to_hermes, hermes_to_soledge = parse_names()
+            
             for param in params:
-                iPlasma, iPar = self.get_param_indices(param)
+                
+                if param in hermes_to_soledge.keys() and param not in soledge_to_hermes.keys():
+                    soledge_param = hermes_to_soledge[param]
+                    param_name = param
+                
+                elif param in soledge_to_hermes.keys() and param not in hermes_to_soledge.keys():
+                    soledge_param = param
+                    param_name = param
+                
+                else:
+                    soledge_param = param
+                    param_name = param
+                
+                iPlasma, iPar = self.get_param_indices(soledge_param)
                 data = get_plasma_parameter_on_mesh(self.Plasmas[iPlasma], iPar, IntCEll)
-                df[param] = data
+                df[param_name] = data
             
             if debug_line is True:
                 fig, ax = plt.subplots()
@@ -258,8 +279,7 @@ class SOLEDGEcase():
     def get_1d_poloidal_data(
         self, 
         params, 
-        rz0_line = [], 
-        theta_line = 0, 
+        region = "outer_lower",
         parallel_length = False,
         d_from_sep = 0.0001,
         verbose = False):
@@ -281,6 +301,12 @@ class SOLEDGEcase():
         Dataframe with poloidal/parallel length, RZ coordinates and parameter data.
         The data column is named after the parameter of choice
         """
+        rz0_line = []
+        
+        if "outer" in region:
+            theta_line = 0
+        elif "inner" in region:
+            theta_line = 180
         
         with HiddenPrints() if verbose is False else contextlib.nullcontext():  # Suppress all prints
         
@@ -291,7 +317,7 @@ class SOLEDGEcase():
             l_pol = 1 if parallel_length is False else 0 
 
             if(l_pol == 0):
-                if_metric = h5py.File(os.path.join(path, "Results/metric"), "r")
+                if_metric = h5py.File(os.path.join(self.path, "Results/metric"), "r")
                 Gmet = []
                 for k in range(len(self.Config.Zones)):
                     zone = "zone{:d}".format(k+1)
@@ -417,20 +443,71 @@ class SOLEDGEcase():
             Lpara = Lpara - Lpara[iThetaOff]   # Parallel or poloidal distance starting at midplane, depending on setting l_pol
             
             
+            
+            soledge_to_hermes, hermes_to_soledge = parse_names()
+            print(hermes_to_soledge)
             # Grab the data, pack in dataframe and return
             df = pd.DataFrame()
             for param in params:
-                iPlasma, iPar = self.get_param_indices(param)
+                
+                if param in hermes_to_soledge.keys() and param not in soledge_to_hermes.keys():
+                    soledge_param = hermes_to_soledge[param]
+                    param_name = param
+                
+                elif param in soledge_to_hermes.keys() and param not in hermes_to_soledge.keys():
+                    soledge_param = param
+                    param_name = param
+                    
+                else:
+                    soledge_param = param
+                    param_name = param
+                    
+                iPlasma, iPar = self.get_param_indices(soledge_param)
                 data = get_plasma_parameter_on_pol(self.Plasmas[iPlasma], iPar, ix, iZones, iThWest, iThEast, nThetaPts)
-                df[param] = data
-            
-           
+                df[param_name] = data
             
             
             df["dist"] = Lpara
             df["R"] = Rpol
-            df["Z"] = Zpol
-            df[param] = data
+            df["Z"] = Zpol    
+            
+            # Index is clockwise
+            
+            if region == "outer_lower":
+                break_index = df[df["Z"] < 0].index[0]  # First point below Z
+                df = df.iloc[break_index-1:].reset_index(drop = True)
+                
+            elif region == "outer_upper":
+                break_index = df[df["Z"] > 0].index[-1]  # Last point below Z
+                df = df.iloc[:break_index+2].reset_index(drop = True)
+                
+            elif region == "inner_upper":
+                break_index = df[df["Z"] > 0].index[0]  # Last point below Z
+                df = df.iloc[break_index-1:].reset_index(drop = True)
+                
+            elif region == "inner_lower":
+                break_index = df[df["Z"] < 0].index[-1]  # First point below Z
+                df = df.iloc[:break_index+2].reset_index(drop = True)
+            
+            # Ensure we start at the midplane
+            if "outer_upper" in region or "inner_lower" in region:
+                df["dist"] = df["dist"].iloc[-1] - df["dist"]
+                df = df.iloc[::-1].reset_index(drop = True)   
+                
+            # df["dist"] = np.abs(df["dist"])
+            if "inner_lower" in region:
+                df["dist"] *= -1
+
+            print("TEST")
+            # Interpolate start to Z = 0
+            for param in df.columns.drop("Z"):
+                interp = scipy.interpolate.interp1d(df["Z"], df[param], kind = "quadratic")
+                df.loc[0, param] = interp(0)
+                
+            df.loc[0,"Z"] = 0  
+        
+        if "velocityi" in df:
+            df["velocityi"] *= self.RefPar.c0   #  Not sure why everything else is normalised but not this...
         
         return df
     
@@ -459,7 +536,9 @@ class SOLEDGEcase():
             
         return iPlasma, iPar
     
-    def get_wall_fluxes(self, verbose = True, split = True, grid = "tight"):
+    def get_wall_fluxes(self, verbose = True, 
+                        split = True, 
+                        grid = "tight"):
         """
         Return wall particle and heat fluxes for the entire wall. If split = true,
         will split the fluxes between  the walls, PFR and targets. This relies 
@@ -608,6 +687,8 @@ class SOLEDGEcase():
         if split is True:
             if grid != "tight": raise Exception(f"Grid type {grid} not implemented yet")
             
+            print("\n", "*"*10, "\nWARNING: Region splitting hardcoded to tight grid\n", "*"*10)
+            
             wfluxes = dict()
             df = wfluxes_all.copy()
             wfluxes["inner_lower_target"] = df.iloc[slice(22,44),:]
@@ -648,6 +729,28 @@ class SOLEDGEcase():
         else:
             # Return all wall fluxes
             return df
+        
+    def get_wall_flux_summary(self):
+        """
+        Get all surface flux integrals to outer wall, inner wall, targets and PFR
+        """
+        wfluxes = self.get_wall_fluxes(verbose = False)
+        df = self.get_wall_fluxes(verbose = False, split = False)
+
+        wfluxes_integral = pd.DataFrame()
+        params = [x for x in list(wfluxes.values())[0].columns if x not in ["R", "Z", 'iTri', 'iSide', 'iProp', 'dlSurf', 'dlWall', 'Area']]
+        for region in wfluxes.keys():
+            for param in params:
+                wfluxes_integral.loc[region, param] = (wfluxes[region][param] * wfluxes[region]["Area"]).sum()
+                
+        df2 = wfluxes_integral.copy()
+
+        df2 = df2[["E_Total", "E_incident_Electron", "E_incident_Ions", "E_incident_Atoms", "E_incident_Molecules", "E_Radiation", "E_Radiation_Atoms", "E_Rad_Recombination", "E_Recombination_in_Wall"]] * 1e-6
+        df2.loc["targets", : ] = df2.loc[["inner_lower_target", "outer_lower_target", "outer_upper_target", "inner_upper_target"]].sum() 
+        df2.loc["pfr", : ] = df2.loc[["lower_pfr", "upper_pfr"]].sum() 
+        df2 = df2.loc[["outer_wall", "inner_wall", "targets", "pfr"]]
+        
+        return df2.transpose()
     
     
     def get_wall_ntmpi(self):
@@ -1027,3 +1130,26 @@ def create_norm(logscale, norm, vmin, vmax):
         norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
 
     return norm
+
+
+def parse_names():
+    soledge_to_hermes =  {
+            'Dense' : "Ne", 
+            'Tempe':"Te", 
+            'Densi':"Nd+", 
+            'Tempi':"Td+",
+            'velocityi':"Vd+",
+            'Ppi':"Pd+",
+            'Ppe':"Pe",
+            'IRadi':"Rd+_ex",
+            "Nni":"Na",
+            "Nmi":"Nm",
+            "Tni":"Ta",
+            "Tmi":"Tm",
+            "Pni":"Pa",
+            "vyni":"Vyd",
+            "DIST":"x"}
+    
+    hermes_to_soledge = {value: key for key, value in soledge_to_hermes.items()}
+    
+    return soledge_to_hermes, hermes_to_soledge
