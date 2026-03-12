@@ -23,11 +23,29 @@ import contextlib
 import h5py
 import scipy
 
+from matplotlib.colors import LogNorm
+from matplotlib.ticker import LogFormatterSciNotation
+
 
 class SOLEDGEcase():
     def __init__(self, 
                  path,
                  verbose = False):
+        
+        self.param_translate = {
+            "Ne" : "Dense",
+            "Te" : "Tempe",
+            "Nd+" : "Densi",
+            "Td+" : "Tempi",
+            "Vd+" : "velocityi",
+            "Pd+" : "Ppi",
+            "Pe" : "Ppe",
+            "Rd+_ex" : "IRadi",   # Assumes only ions 
+            "Rtot" : "TotRadi",
+            "Na" : "Nni",
+            "Ta" : "Tni",
+            
+        }
         
         with HiddenPrints() if verbose is False else contextlib.nullcontext():  # Suppress all prints
             
@@ -82,8 +100,8 @@ class SOLEDGEcase():
     
     def plot_2d(
         self,
-        fig,
-        ax,
+        ax = None,
+        fig = None,
         param = None, 
         data = None,
         norm = None,
@@ -121,9 +139,12 @@ class SOLEDGEcase():
         # if param != None and data.isinstance(np.array):
         #     raise Exception("Must provide param or data")
         
+        if ax is None:
+            fig, ax = plt.subplots()
+            ax.set_aspect("equal")
+            
         if param != None:
-            iPlasma, iPar = self.get_param_indices(param, triangles = True)
-            data = self.Plasmas[iPlasma][0].Triangles.Values[iPar]
+            data = self.get_data(param)
         
         
         # Calculate range if not provided
@@ -150,11 +171,91 @@ class SOLEDGEcase():
             ax.plot(rhs["R"], rhs["Z"], lw = lw, c = c)
             
         if cbar is True:
-            fig.colorbar(tp, norm=norm, label = cbar_label)
-
             
-        # self.params = self.Plasmas[iPlasma][0].Triangles.VNames + self.Plasmas[iPlasma][1].Triangles.VNames
-          
+            if fig != None:
+                fig.colorbar(tp, norm=norm, label = cbar_label)
+
+    def plot_neutral_vectors(self, 
+                             ax = None, 
+                             normalise_arrows = True, 
+                             flux = False,
+                             vmin = None, 
+                             vmax = None, 
+                             cmap = "jet",
+                             logscale = False,
+                             width = 0.0025,
+                             scale_mult = 1,
+                             gridcolor = "lightgrey", 
+                             gridwidth = 0.5):
+        """
+        Neutral atom vector plot based on Vxni, Vyni 
+        """
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        
+
+
+        x = self.R
+        y = self.Z
+        triangles = self.TriKnots
+        px = x[triangles].mean(axis=1)
+        py = y[triangles].mean(axis=1)
+
+        U = self.get_param_data("vxni")
+        V = self.get_param_data("vyni")
+        
+        if flux:
+            U *= self.get_param_data("Nni")
+            V *= self.get_param_data("Nni")
+            clabel = "Flux [$m^2/s$]"
+        else:
+            clabel = "Speed [$m/s$]"
+            
+        speed = np.hypot(U, V)
+
+        # normalize vectors to unit length for plotting
+        # avoid division by zero
+        if normalise_arrows:
+            eps = 1e-16
+            U = U / (speed + eps) * 5e4 * scale_mult
+            V = V / (speed + eps) * 5e4 * scale_mult
+            
+        # set up log normalization (avoid zeros by clipping)
+        if vmin is None:
+            vmin = max(speed.min(), 1e-3)  # lower bound >0
+        if vmax is None:
+            vmax = speed.max()
+            
+        if logscale:
+            norm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax)
+            cbar_formatter = LogFormatterSciNotation(base=10)
+        else:
+            norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+            cbar_formatter = None
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize = (5,15))
+
+        # Grid
+        ax.triplot(self.TripTriang, color = gridcolor, lw = gridwidth)
+
+        # Vectors
+        Q = ax.quiver(px, py, U, V, speed,
+                angles='xy',        # no automatic rotation
+                scale_units='xy',   # scale in data units
+                cmap = cmap,
+                norm = norm,
+                scale=3e6,            # if vectors are already in desired length
+                width=width        # adjust arrow thickness
+                )
+
+        # create a colorbar whose height matches ax
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="3%", pad=0.05)
+        cbar = plt.colorbar(Q, cax=cax, format=cbar_formatter)
+        cbar.set_label(clabel)
+        cbar.ax.yaxis.set_tick_params(which='both', length=4)
+
+ 
     def _get_2d_on_tri(self,param):
         """
         Return plottable 2D data on triangle mesh
@@ -535,6 +636,30 @@ class SOLEDGEcase():
                 iPar = self.Plasmas[iPlasma][0].VNames.index(param) 
             
         return iPlasma, iPar
+    
+    def get_param_data(self, name):
+        iPlasma, iPar = self.get_param_indices(name, triangles = True)
+        return self.Plasmas[iPlasma][0].Triangles.Values[iPar]
+    
+    def get_data(self, param):
+        """
+        Parse data and get it
+        """
+        if param == "Pa":
+            data = self.get_param_data("Nni") * self.get_param_data("Tni") * 1.6022e-19
+        elif param == "Pm":
+            data = self.get_param_data("Nmi") * self.get_param_data("Tmi") * 1.6022e-19
+        elif param == "Pn":
+            data = self.get_param_data("Nni") * self.get_param_data("Tni") * 1.6022e-19
+            data += self.get_param_data("Nmi") * self.get_param_data("Tmi") * 1.6022e-19
+        elif param in self.params:
+            data = self.get_param_data(param)
+        elif param in self.param_translate.keys():
+            data = self.get_param_data(self.param_translate[param])
+        else:
+            raise Exception(f"Parameter {param} not found in data or parser")
+        
+        return data
     
     def get_wall_fluxes(self, verbose = True, 
                         split = True, 

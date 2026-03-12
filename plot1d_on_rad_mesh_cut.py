@@ -68,9 +68,10 @@ if __name__ == "__main__":
 	##########################
 	# SETTINGS OVERRIDES... CLI CAPTURE BROKEN
 	##########################
-	save = "csv"
-	# save = "none"
-	theta_line = 180
+	# save = "csv"
+	save = "none"
+	# theta_line = 180
+	theta_line = 0
 	neutral_override = True
 	plot1d_on_rad_mesh_cut(path=path, evolution=evolution, rz0_line=rz0_line, theta_line=theta_line, mod_file=mod_file, exp_files=exp_files, shot=shot, tstart=tstart, tend=tend, path_label=path_label, no_labels=no_labels, d_only=d_only, all_ions=all_ions, log_scale=log_scale, rho_scale=rho_scale, psi_scale=psi_scale, print_lambda=print_lambda, diff=diff, extra_walls=extra_walls, one_plot=one_plot, save=save, neutral_override = neutral_override)
 	exit()
